@@ -228,3 +228,40 @@ the wish to convert transportation graphs into NFAs, and to determinize and mini
 
 \bibliographystyle{ieeetr}
 \bibliography{dissertation}
+
+
+* Testing & Benchmarking
+** Behaviour Testing
+#+TODO: Unit testing case-by-case
+** Benchmarking
+#+TODO: GAP-generated NFAs
+#+TODO: Self-generated NFAS
+
+* Sequential Approach
+** Approach to Determinization
+#+TODO: Superset Construction Algo pseudocode
+#+TODO: Superset Construction complexity & ramifications
+** Approah to Minimization
+*** Hopcroft's Algorithm
+#+TODO: Hopcroft Algo pseudocode
+#+TODO: Hopcroft Algo complexity and ramifications
+*** Brozozowski's Algorithm
+#+TODO: Brozozowski's workings
+#+TODO: nfdeterminize support
+** Benchmarking
+*** GAP-generation vs self-generation
+#+TODO: Show benchmark, show why difference occurs
+*** Pitfalls
+#+TODO: epsilon transitions
+
+* Multithreaded Approach
+** Towards a Multithreaded Approach
+#+TODO: Pitfalls of sequential approach
+#+TODO: Issues of shared memory in determinization and minimization
+** New Algorithms
+*** Determinization
+#+TODO: Pseudocode shared memory superset construction
+*** Minimization
+#+TODO: Pseudocode shared memory minimization algo
+** Benchmarking
+#+TODO: Results against sequential approach
