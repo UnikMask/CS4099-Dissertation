@@ -303,14 +303,16 @@ transitions, which means that the resulting DFA holds the same language than the
     \While{\( \left| Q \right| \neq 0\)}
         \State \(P_{next}\) \gets pop \(Q\)
         \ForAll{a \in \(\Sigma\), V \in \(P\)}
-            \If{\(\delta^{-1}(P_{next}) \cap V \neq \emptyset \wedge V \backslash \delta^{-1}(P_{next}) \neq \emptyset\)}
+            \If{\(\delta^{-1}(P_{next}) \cap V \neq \emptyset \cap V \backslash \delta^{-1}(P_{next}) \neq \emptyset\)}
                 \State remove \(V\) from \(P\)
-                \State push \(\delta^{-1}(P_{next}) \wedge V\) into \(P\)
+                \State push \(\delta^{-1}(P_{next}) \cap V\) into \(P\)
                 \State push \(V \backslash \delta^{-1}(P_{next})\) into \(P\)
                 \If{\(V \in Q\)}
-                    \State replace \([V]\) in \(Q\) with \([V \backslash \delta^{-1}(P_{next}), \delta^{-1}(P_{next}) \wedge V]\)
+                    \State replace \([V]\) in \(Q\) with \([V \backslash \delta^{-1}(P_{next}), \delta^{-1}(P_{next}) \cap V]\)
+                \ElsIf{\(\left| V \backslash \delta^{-1}(P_{next}) \right| \leq \left| \delta^{-1}(P_{next}) \cap V \right|\)}
+                    \State add \(V \backslash \delta^{-1}(P_{next})\) to \(Q\)
                 \Else
-                    \State add \(V \backslash \delta^{-1}(P_{next})\) and \(\delta^{-1}(P_{next}) \wedge V\) to \(Q\)
+                    \State add \(\delta^{-1}(P_{next}) \cap V\) to \(Q\)
                 \EndIf
             \EndIf
         \EndFor
