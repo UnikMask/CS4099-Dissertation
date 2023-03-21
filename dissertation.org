@@ -8,7 +8,9 @@
 #+LATEX_HEADER: \usepackage{fontspec}
 #+LATEX_HEADER: \usepackage{amsmath}
 #+LATEX_HEADER: \usepackage{tikz}
+#+LATEX_HEADER: \usetikzlibrary{automata, positioning, arrow}
 #+LATEX_HEADER: \usepackage{algorithm}
+#+LATEX_HEADER: \usepackage{amsthm}
 #+LATEX_HEADER: \usepackage{algpseudocode}
 #+LATEX_HEADER: \pagestyle{fancy}
 #+LATEX_HEADER: \fancyhf{}
@@ -49,6 +51,7 @@ that the BSP/Pregel based solution outperforms the MapReduce solution.
 
 
 * Token Passing Networks
+<<para:tpn>>
 A token passing network is a directed graph \(G = (V, E)\) such that:
 + \(V\): Vertices/nodes,
 + \(E \in (V \times label \times V)\): edges - an edge connects a vertex to another, and may contain a label.
@@ -228,8 +231,31 @@ From the rank encoding it is easy to describe the language of all accepted permu
 the wish to convert transportation graphs into NFAs, and to determinize and minimize them.
 
 * Testing & Benchmarking
+The main purpose of NFA determinization and minimization in the context of this paper is the description of the language
+accepted by transportation graphs, as described in \ref{para:tpn}. Therefore, testing and benchmarking here involves two main
+components: testing the correctness of the program's behaviour, and being able to determinize and minimize token passing
+networks fast.
+
 ** Behaviour Testing
-#+TODO: Unit testing case-by-case
+The first step in the testing and benchmarking process is to test for correctness of the programs' behaviours. Here,
+it is done by unit testing the determinization and minimization algorithm by using NFA and DFA examples that rely on
+particular behaviours of each of the determinization and minimization algorithms.
+
+*** Testing Determinization
+Determinizations of NFAs are DFAs that often show certain patterns. For example, a determinization of an NFA often possesses
+a "sinkhole" state for which all transitions coming from it come back to the state. Other behaviours should be clearly
+defined, such as how determinization deals with \(\epsilon\) transitions. Therefore, unit tests check that the behaviours that
+define determinization are strictly followed, hence proving the correctness of the algorithm.
+
+Part \ref{appendix:nfatodfa} of the appendix lists the multiple patterns that were tested during determinization testing.
+
+*** Testing Minimization
+Minimization is tested similarly to the way determinization is tested, by testing on DFAs that are minimially bipartite,
+some with a single separation of sets within a partition, and some unminimizable DFA.
+
+Those tests are not as detailed behaviour-wise as the unit tests for determinization, and are more specialized towards
+Hopcroft's algorithm. However, they do demonstrate some level of correctness in the algorithm.
+
 ** Benchmarking
 #+TODO: GAP-generated NFAs
 #+TODO: Self-generated NFAS
@@ -283,37 +309,89 @@ Complexity-wise, the worst-case time complexity of the superset construction is 
 Such worst-case is unavoidable as the size of the superset of states in the NFA \(\left| \mathds{S}(S) \right| = 2^{\left| S \right|}\), where \(S\) is the set of states in the original NFA.
 However, this treshold is generally never reached, hence the purpose of the superset construction algorithm.
 
-** Approah to Minimization
+In terms of implementing the sequential version of the superset construction algorithm, most of the design decision comes in
+how to store sets of states, as a state should be able to describe one of \(2^{n}\) possible states.
+
+*** Storing Sets of States
+The main challenge of superset construction implementation is not the implementation of the exploration algorithm, but
+rather how to represent states of superset construction. The issues stems from how in superset construction, there
+are about \(2^{n}\) possibly reachable states, so it is required to find a fast and memory-efficient way to store
+such a state in a hash map. Furthermore, \cite{DBLP_journal} states that in a 2 billion-state DFA, each DFA state may
+consist of upto 20 of the NFA states. Therefore, it is definitely required shorten the size of a state.
+
+The solution implemented in the program is as such -
++ During superset construction, when a new state is being searched, represent the set of states as an array of bits.
+  This representation is useful as bitwise operations can be done upon it, for a low cost.
+
++ Then, before hashing the set and inserting it to a hash map, compress the array. Here, the lz4 algorithm is used.
+  The lz4 algorithm is a modern and fast byte array compression method that may simply return a byte array. It's main
+  advantage is its speed compared to that of other compression algorithms, although it is not as size efficient.
+
++ The compressed array is inserted into the hash map. State storage size has been decreased for a moderate speed cost.
+
+
+In =nfdeterminize=, this data structure is defined as a =Ubig= struct, which stands for =unsigned integer=. It is defined in
+the =ubig.rs= source file.
+
+** Approach to Minimization
 While NFA determinization has been a well-known subject for a long time, DFA minimization on the other hand has less well-known algorithms. Out of all the minimization algorithms nowadays, 2 stand out as better
 algorithms than the rest. Those are Hopcroft's algorithm and Brzozowski's minimization algorithm.
 
 *** Hopcroft's Algorithm
 
-Hopcroft's algorithm is the first, and probably the most well-known DFA minimization algorithm. It is based on Hopcroft-Karp's bipartite graph algorithm, which calculates the maximum cardinality matching for it.
+Hopcroft's algorithm, made by J. Hopcroft in 1971\cite{Hopcroft1971AnNL},  is the first, and probably
+the most well-known non-\(O(n^{2})\) time complexity DFA minimization algorithm. It is one of the first partition refinement algorithms.
 
-Hopcrof't algorithm separates the states of the DFA into a set of 2 partitions - accept states and non-accept states. Then, until the frontier is empty, it explores if reverse transitions from states to other
-overlap with partitions in the set of partitions. If it is the case, then it means the partition has to be divided further. The algorithm is repeated until all states in each partition share the same properties regarding
-transitions, which means that the resulting DFA holds the same language than the original one, but at it's minimal size.
+Hopcrof't algorithm separates the states of the DFA into a partition of 2 sets - accept states and non-accept states. Those will be the states of the minimal automata by the end of the algorithm's execution.
+Then, until the frontier is empty, it searches for states in the partition for which the transitions lead to distinguishable states.
+
+
+If it is the case, then it means the partition has to be divided further. The algorithm is repeated until all states in each partition contain states that are indistinguishable by their transitions,
+which means that the resulting DFA holds the same language than the original one, but at it's minimal size.
+
+For definitions, let:
++ \(\mathcal{P}\): the partition to refine,
++ \(P \in \mathcal{P}\): a set of states in the partition.
+
+Hopcroft's algorithm relies on the following lemma -
+\newtheorem{lemma}{Lemma}
+\begin{lemma}
+
+Let some finite state machine \(M = (S, \Sigma, \delta, S_{p}, T)\).
+
+\(\forall p \in S. \forall q \in S. \forall a \in \Sigma\), let \(\delta(p, a) = p^{'}\), \(\delta(q, a) = q^{'}\).
+
+\(p^{'}\) and \(q^{'}\) are distinguishable \(\Rightarrow\) \(p\) and \(q\) are distinguishable.
+
+\end{lemma}
+
+Therefore, Hopcroft's algorithm uses the reverse transitions of the next set in the frontier to establish distinguishability between states in a set of the partition. Distinguishibility is therefore
+defined as such, for some sets \(V, P \in \mathcal{P}\), and \(\delta^{-1}(P, a)\) the set of states \(s \in S s.t \delta(s, a) \in P\):
+
+\[V \cap \delta^{-1}(P, a) \neq \emptyset \wedge V \backslash \delta^{-1}(P, a) \neq \emptyset \Rightarrow V \text{ is distinguishible into } V \cap \delta^{-1}(P, a) \text{ and } V \backslash \delta^{-1}(P, a)\]
+
+
 
 #+CAPTION: Hopcroft's Algorithm
 \begin{algorithm}
+\label{algo:hopcroft}
 \begin{algorithmic}[1]
 \Procedure{HopcroftAlgo}{\(M = (S, \Sigma, \delta, s_{0}, T)\)}
-    \State \(P\) \gets \([T, S \backslash T]\)
+    \State \(\mathcal{P}\) \gets \([T, S \backslash T]\)
     \State \(Q\) \gets \([T, S \backslash T]\)
     \While{\( \left| Q \right| \neq 0\)}
         \State \(P_{next}\) \gets pop \(Q\)
-        \ForAll{a \in \(\Sigma\), V \in \(P\)}
-            \If{\(\delta^{-1}(P_{next}) \cap V \neq \emptyset \cap V \backslash \delta^{-1}(P_{next}) \neq \emptyset\)}
+        \ForAll{a \in \(\Sigma\), V \in \(\mathcal{P}\)} \label{algo:hopcroft:forall}
+            \If{\(\delta^{-1}(P_{next}, a) \cap V \neq \emptyset \cap V \backslash \delta^{-1}(P_{next}, a) \neq \emptyset\)}
                 \State remove \(V\) from \(P\)
-                \State push \(\delta^{-1}(P_{next}) \cap V\) into \(P\)
-                \State push \(V \backslash \delta^{-1}(P_{next})\) into \(P\)
+                \State push \(\delta^{-1}(P_{next}, a) \cap V\) into \(P\)
+                \State push \(V \backslash \delta^{-1}(P_{next}, a)\) into \(P\)
                 \If{\(V \in Q\)}
-                    \State replace \([V]\) in \(Q\) with \([V \backslash \delta^{-1}(P_{next}), \delta^{-1}(P_{next}) \cap V]\)
-                \ElsIf{\(\left| V \backslash \delta^{-1}(P_{next}) \right| \leq \left| \delta^{-1}(P_{next}) \cap V \right|\)}
-                    \State add \(V \backslash \delta^{-1}(P_{next})\) to \(Q\)
+                    \State replace \([V]\) in \(Q\) with \([V \backslash \delta^{-1}(P_{next}, a), \delta^{-1}(P_{next}, a) \cap V]\)
+                \ElsIf{\(\left| V \backslash \delta^{-1}(P_{next}, a) \right| \leq \left| \delta^{-1}(P_{next}, a) \cap V \right|\)}
+                    \State add \(V \backslash \delta^{-1}(P_{next}, a)\) to \(Q\)
                 \Else
-                    \State add \(\delta^{-1}(P_{next}) \cap V\) to \(Q\)
+                    \State add \(\delta^{-1}(P_{next}, a) \cap V\) to \(Q\)
                 \EndIf
             \EndIf
         \EndFor
@@ -321,10 +399,39 @@ transitions, which means that the resulting DFA holds the same language than the
 \EndProcedure
 \end{algorithmic}
 \end{algorithm}
-#+TODO: Hopcroft Algo complexity and ramifications
+
+Hopcroft's Algorithm, as shown on figure \ref{algo:hopcroft}, has asymptotic time complexity \(O(knlog(n))\)\cite{Hopcroft1971AnNL}, where:
++ \(k\): the number of input letters in the alphabet \(\Sigma\),
++ \(n\): the number of states in the initial DFA.
+
+Implementation-wise, the approach here is closer to the implementation described in \cite{Yingjie2009DescribingAN}, with some performance improvements.
+On line \ref{algo:hopcroft:forall} of \ref{algo:hopcroft}, instead of looking for all \(V\) in \(\mathcal{P}\), it is possible to iterate through all partitions
+linked to a state in \(\delta^{-1}(P_{next}, a)\), by keeping a map of what state is linked to which set in \(\mathcal{P}\). Doing so avoids the lengthy process of iterating
+through \(\mathcal{P}\) for every set \(P_{next}\) in the frontier.
+
+On the rust implementation, sets are represented as ordered vectors. With ordered vectors, difference and intersection construction can be done in \(O(n)\) time complexity, and
+ordered vector construction from inverse transformation is done in \(O(n log(n))\) time complexity, for \(n\) the size of the set. Using a vector instead of a set avoids the overhead gotten from
+consistently hashing values into a hash set.
+
+Finally, the queue \(Q\) is done in a circular ring buffer as using contiguous memory, instead of a linked list, for faster memory access, while the partition is done as a simple contiguous memory array, as
+it is never needed to pop anything from it. Instead, adding to the partition is done by replacing \(V\) by \(V \cap \delta^{-1}(P_{next}, a)\) and appending \(V \backslash \delta^{-1}(P_{next}, a)\) to the end of \(\mathcal{P}\).
+
 *** Brzozowski's Algorithm
-#+TODO: Brzozowski's workings
-#+TODO: nfdeterminize support
+
+Brzozowski's algorithm is an exception to the general landscape of DFA minimization algorithms. Most minimization algorithms
+work by doing partition refinement, like Hopcroft's, and some work by fusion like Revuz's \cite{REVUZ1992181}.
+However, Brzozowski's algorithm works, for some finite state machine \(M = (S, \Sigma, \delta, S_{0}, T)\), by
+determinizing \(M^{R} = (S, \Sigma, \delta^{-1}, T, S_{0})\), where \(\delta^{-1}\) is the table of inverse transitions from \(M\). Then, perform
+
+determinization of \((M^{R})^{R}\). The result of the determinized \((M^{R})^{R}\) is the minimal DFA representation of \(M\).
+
+
+This algorithm is very easy to implement as determinization has already been implemented beforehand. However, as with determinization,
+it has an exponential time complexity.
+
+Performance-wise however, Brzozowski's is known to outperform other minimization algorithm in particular cases, so it is interesting to support. Here, it
+is supported via arguments to the =run= and =determinize= commands of =nfdeterminize=.
+
 ** Benchmarking
 *** GAP-generation vs self-generation
 #+TODO: Show benchmark, show why difference occurs
@@ -343,6 +450,152 @@ transitions, which means that the resulting DFA holds the same language than the
 ** Benchmarking
 #+TODO: Results against sequential approach
 
+
+* Appendix
+** NFA to DFA patterns in Unit Tests
+<<appendix:nfatodfa>>
+#+CAPTION: Redundant NFA to redundant DFA
+\begin{figure}
+\centering
+\begin{tikzpicture}[->, >=stealth, node distance=2cm, every state/.style={thick, fill=gray!10}, initial text=$ $]
+    \node[state, initial, accepting] (s0) {\(s_{0}\)};
+    \draw (s0) edge[loop above] node{a, b} (s0);
+\end{tikzpicture}
+\begin{tikzpicture}[->]
+    \node (ph) at (0.5, -0.5) {};
+    \draw (0, 0) -> (1, 0);
+\end{tikzpicture}
+\begin{tikzpicture}[->, >=stealth, node distance=3cm, every state/.style={thick, fill=gray!10}, initial text=$ $]
+    \node[state, initial, accepting] (s0) {\(s_{0}\)};
+    \draw (s0) edge[loop above] node{a, b} (s0);
+\end{tikzpicture}
+\label{fig:redundant}
+\end{figure}
+
+
+#+CAPTION: Empty language NFA to empty language DFA
+\begin{figure}
+\centering
+\begin{tikzpicture}[->, >=stealth, node distance=2cm, every state/.style={thick, fill=gray!10}, initial text=$ $]
+    \node[state, initial, accepting] (s0) {\(s_{0}\)};
+\end{tikzpicture}
+\begin{tikzpicture}[->]
+    \node (ph) at (0.5, -0.5) {};
+    \draw (0, 0) -> (1, 0);
+\end{tikzpicture}
+\begin{tikzpicture}[->, >=stealth, node distance=2cm, every state/.style={thick, fill=gray!10}, initial text=$ $]
+    \node[state, initial, accepting] (s0) {\(s_{0}\)};
+    \node[state, right of=s0] (s1) {\(s_{1}\)};
+    \draw (s0) edge[above] node{a, b} (s1)
+          (s1) edge[loop above] node{a, b} (s1);
+\end{tikzpicture}
+\label{fig:redundant}
+\end{figure}
+
+#+CAPTION: Unreachable state in NFA removed in the DFA
+\begin{figure}
+\centering
+\begin{tikzpicture}[->, >=stealth, node distance=1.5cm, every state/.style={thick, fill=gray!10}, initial text=$ $]
+    \node[state, initial, accepting] (s0) {\(s_{0}\)};
+    \node[state, right of=s0] (s1) {\(s_{1}\)};
+    \draw (s0) edge[loop above] node{a, b} (s0);
+\end{tikzpicture}
+\begin{tikzpicture}[->]
+    \node (ph) at (0.5, -0.5) {};
+    \draw (0, 0) -> (1, 0);
+\end{tikzpicture}
+\begin{tikzpicture}[->, >=stealth, node distance=3cm, every state/.style={thick, fill=gray!10}, initial text=$ $]
+    \node[state, initial, accepting] (s0) {\(s_{0}\)};
+    \draw (s0) edge[loop above] node{a, b} (s0);
+\end{tikzpicture}
+\label{fig:redundant}
+\end{figure}
+
+#+CAPTION: NFA to DFA with sinkhole
+\begin{figure}
+\centering
+\begin{tikzpicture}[->, >=stealth, node distance=1.7cm, every state/.style={thick, fill=gray!10}, initial text=$ $]
+    \node[state, initial] (s0) {\(s_{0}\)};
+    \node[state, right of=s0] (s1) {\(s_{1}\)};
+    \node[state, accepting, right of=s1] (s2) {\(s_{2}\)};
+    \draw (s0) edge[above] node{a} (s1)
+        (s1) edge[above] node{a} (s2);
+\end{tikzpicture}
+\begin{tikzpicture}[->]
+    \node (ph) at (0.5, -0.5) {};
+    \draw (0, 0) -> (1, 0);
+\end{tikzpicture}
+\begin{tikzpicture}[->, >=stealth, node distance=1.7cm, every state/.style={thick, fill=gray!10}, initial text=$ $]
+    \node[state, initial] (s0) {\(s_{0}\)};
+    \node[state, right of=s0] (s1) {\(s_{1}\)};
+    \node[state, below of=s1] (s2) {\(s_{2}\)};
+    \node[state, accepting, right of=s1] (s3) {\(s_{3}\)};
+    \draw (s0) edge[above] node{a} (s1)
+        (s1) edge[above] node{a} (s3)
+        (s0) edge[below] node{b} (s2)
+        (s1) edge[right] node{b} (s2)
+        (s3) edge[below] node{a, b} (s2)
+        (s2) edge[loop below] node{a, b} (s2)
+\end{tikzpicture}
+\label{fig:redundant}
+\end{figure}
+
+
+#+CAPTION: NFA to DFA with sets of NFA states for states
+\begin{figure}
+\centering
+\begin{tikzpicture}[->, >=stealth, node distance=2cm, every state/.style={thick, fill=gray!10}, initial text=$ $]
+    \node[state, initial] (s0) {\(s_{0}\)};
+    \node[state, accepting, right of=s0] (s1) {\(s_{1}\)};
+    \draw (s0) edge[above] node{a} (s1)
+        (s0) edge[loop above] node{a} (s0)
+\end{tikzpicture}
+\begin{tikzpicture}[->]
+    \node (ph) at (0.5, -0.5) {};
+    \draw (0, 0) -> (1, 0);
+\end{tikzpicture}
+\begin{tikzpicture}[->, >=stealth, node distance=2cm, every state/.style={thick, fill=gray!10}, initial text=$ $]
+    \node[state, initial] (s0) {\([s_{0}]\)};
+    \node[state, accepting, right of=s0] (s1) {\([s_{0}, s_{1}]\)};
+    \draw (s0) edge[above] node{a} (s1)
+        (s1) edge[loop above] node{a} (s1)
+\end{tikzpicture}
+\label{fig:redundant}
+\end{figure}
+
+
+
+#+CAPTION: \epsilon automaton to DFA
+\begin{figure}
+\centering
+\begin{tikzpicture}[->, >=stealth, node distance=2cm, every state/.style={thick, fill=gray!10}, initial text=$ $]
+    \node[state, initial] (s0) {\(s_{0}\)};
+    \node[state, right of=s0] (s1) {\(s_{1}\)};
+    \node[state, below of=s0] (s2) {\(s_{2}\)};
+    \node[state, accepting, below of=s1] (s3) {\(s_{3}\)};
+    \draw (s0) edge[above] node{\(\epsilon\)} (s1)
+        (s0) edge[left] node{a} (s2)
+        (s1) edge[right] node{a} (s3)
+        (s2) edge[below] node{b} (s3)
+        (s3) edge[loop below] node{a, b} (s3);
+\end{tikzpicture}
+\begin{tikzpicture}[->]
+    \node (ph) at (0.5, 0) {};
+    \draw (0, 2) -> (1, 2);
+\end{tikzpicture}
+\begin{tikzpicture}[->, >=stealth, node distance=2cm, every state/.style={thick, fill=gray!10}, initial text=$ $]
+    \node[state, initial] (s0) {\([s_{0}]\)};
+    \node[state, accepting, right of=s0] (s1) {\([s_{1}, s_{3}]\)};
+    \node[state, below of=s0] (s2) {\([]\)};
+    \node[state, accepting, below of=s1] (s3) {\([s_{3}]\)};
+    \draw (s0) edge[above] node{\(\epsilon\)} (s1)
+        (s0) edge[left] node{a} (s2)
+        (s1) edge[right] node{a} (s3)
+        (s2) edge[loop below] node{a, b} (s2)
+        (s3) edge[loop below] node{a, b} (s3);
+\end{tikzpicture}
+\label{fig:redundant}
+\end{figure}
 
 
 \bibliographystyle{ieeetr}
