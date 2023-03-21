@@ -8,6 +8,7 @@
 #+LATEX_HEADER: \usepackage{fontspec}
 #+LATEX_HEADER: \usepackage{amsmath}
 #+LATEX_HEADER: \usepackage{tikz}
+#+LATEX_HEADER: \usepackage{algorithm}
 #+LATEX_HEADER: \usepackage{algpseudocode}
 #+LATEX_HEADER: \pagestyle{fancy}
 #+LATEX_HEADER: \fancyhf{}
@@ -247,8 +248,8 @@ reachable states in the resulting DFA. The consequences are two-fold:
 The algorithm possesses shared memory in form of \(M\), the structure that maps a kept set of states to the number that it
 is assigned on the final DFA, because the algorithm needs to check if a state has already been found after producing it.
 
+#+CAPTION: Rabin Scott's Superset Construction Algorithm
 \begin{algorithm}
-\caption{Rabin Scott's Superset Construction Algorithm}\label{rabinscott}
 \begin{algorithmic}[1]
 \Procedure{SupersetConstruction}{\(M = (S, \Sigma, \delta, S_{0}, T)\)}
 \State \(M\) \gets [(\(S_{0}, 0\))]
@@ -284,7 +285,7 @@ However, this treshold is generally never reached, hence the purpose of the supe
 
 ** Approah to Minimization
 While NFA determinization has been a well-known subject for a long time, DFA minimization on the other hand has less well-known algorithms. Out of all the minimization algorithms nowadays, 2 stand out as better
-algorithms than the rest. Those are Hopcroft's algorithm and Brozozowski's minimization algorithm.
+algorithms than the rest. Those are Hopcroft's algorithm and Brzozowski's minimization algorithm.
 
 *** Hopcroft's Algorithm
 
@@ -294,8 +295,8 @@ Hopcrof't algorithm separates the states of the DFA into a set of 2 partitions -
 overlap with partitions in the set of partitions. If it is the case, then it means the partition has to be divided further. The algorithm is repeated until all states in each partition share the same properties regarding
 transitions, which means that the resulting DFA holds the same language than the original one, but at it's minimal size.
 
+#+CAPTION: Hopcroft's Algorithm
 \begin{algorithm}
-\caption{Hopcroft's Algorithm}\label{hopcroft}
 \begin{algorithmic}[1]
 \Procedure{HopcroftAlgo}{\(M = (S, \Sigma, \delta, s_{0}, T)\)}
     \State \(P\) \gets \([T, S \backslash T]\)
@@ -321,8 +322,8 @@ transitions, which means that the resulting DFA holds the same language than the
 \end{algorithmic}
 \end{algorithm}
 #+TODO: Hopcroft Algo complexity and ramifications
-*** Brozozowski's Algorithm
-#+TODO: Brozozowski's workings
+*** Brzozowski's Algorithm
+#+TODO: Brzozowski's workings
 #+TODO: nfdeterminize support
 ** Benchmarking
 *** GAP-generation vs self-generation
