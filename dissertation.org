@@ -21,12 +21,17 @@
 * Introduction
 Finite State Automata are one of the most fundamental concepts in Computer Science. Their uses range everywhere from parsing
 to mathematical theory. Finite State Automata exist in two kinds: Deterministic Finite Automata (DFAs) and Non-Deterministic
-Finite Automata (NFAs). It is well-known that both structures describe the same set of languages (regular languages), but
+Finite Automata (NFAs).
+
+It is well-known that both structures describe the same set of languages (regular languages), but
 it is in general significantly easier to work with DFAs than NFAs. Some problems are first transcribed into NFAs, therefore
 the determinization of a DFA into a NFA, and it's minimization, are critical steps into the understanding of those problems.
+However, both those problems are computationally complex and memory intensive,
+hence the need to do it efficiently, and to distribute the computation towards multiple systems.
 
 Here, a set of determinization and minimization algorithms, ranging from single-threaded to distributed, is described and
-implemented to solve that task, and tested on a problem class about the determinization of NFAs: Transportation Graphs AKA
+solutions are implemented to solve that task, in a sequential, multi-threaded, and multi-process manner.
+The algorithms are then tested and compared on a problem class about the determinization of NFAs: Transportation Graphs AKA
 Token Passing Networks.
 
 * Related Works
@@ -232,6 +237,69 @@ the wish to convert transportation graphs into NFAs, and to determinize and mini
 
 
 * The =nfdeterminize= System
+The solution that is implemented for this research is a program named =nfdeterminize=. =Nfdeterminize= is a command-line
+application that takes in a finite state machine, either as a file, or by generating a token passing network. Then, it
+can either determinize the given NFA, minimize a DFA, or run both functionalities to convert an NFA into a minimal DFA.
+
+** Features
+As an NFA determinization and minimization solution that specialises in dealing with token passing network automatas,
+=nfdeterminizes= supports the following features:
++ Loading automatas from file under GAP's printing style for finite state automatas,
++ Generating and loading automatas out of token passing network patterns for direct use by the program,
++ Determinizing and minimizing any given finite state automaton,
++ Choosing between algorithms, sequential, multi-threaded and multi-processing implementations for determinization and
+  minimization.
++ Outputting the result either on standard output, or to a file that is under GAP's automata format, such that the automata
+  may be loaded onto GAP later on.
+
+** Language
+The software for this project is written in Rust. Rust[fn:: https://rust-lang.org] is a performance-focused and memory-safe
+programming language with a modern approach to memory management by enforcing memory safety. It is a relatively new language,
+having only appeared in 2015, and it's distributed computing support is at the current moment relatively limited. However,
+it's ecosystem is maturing fairly quickly over time, and has a wide community.
+
+The main reason why Rust is chosen here over other languages is for it's commitment to performance and memory safety -
+it performs as well if not better over certain cases than C or C++, but guarantees memory safety by checking for
+inconsistencies and memory lifetime at compile time. Furthermore, Rust also deals with concurrent access issues
+at compile time, which takes away a lot of strain during development of multi-threaded or multi-process algorithms.
+
+Some other potential languages for implementation are C++, Java or Go.
+
+C++ is a high-performance language as well, with
+a mature ecosystem, but does not deal with memory as well as Rust does. Furthermore, Rust, being a more modern language,
+has in general more efficient built-in implementations of data structures, such as Rust's =HashMap=, implemented using
+the swiss table [fn:: https://abseil.io/about/design/swisstables].
+
+Go is another programming language with performance and memory safety in mind. The main advantage of Go is how it easily
+handles concurrency by using goroutines. Furthermore, Go has very solid support for the Docker API and Kubernetes, making it
+a good choice for multi-threaded or distributed workloads. However, Go uses a garbage collector during runtime, and in general
+performs considerably slower for same programs than Rust or C++ would.
+
+Finally, Java is a high-level, object oriented programming language. Java is the only language in this list that is not
+strictly a compiled language, compiling to bytecode that is run on the JVM, instead of running directly on the machine.
+Java is not a good choice for this application, as using Java and the JVM comes at severe performance costs.
+
+Overall, Rust was chosen for =nfdeterminize= for the following factors:
++ No sacrifice between memory safety and performance,
++ Good multithreaded suppport thanks to compile time concurrent access checking, shared memory and message-based concurrency
+  support,
++ Modern and easy dependency management with =cargo=[fn:: https://doc.rust-lang.org/cargo],
+
+
+** Distributed Computing in Rust
+Rust being a relatively new language, it has at the current moment limited support for Docker. Some small projects exist
+however, that wrap the docker API for Rust.
+
+Aside from Docker, Rust processes can still communicate between each other using
+either =ipc-channel=[fn:: https://github.com/ip-channel], or using ZeroMQ[fn:: https://zeromq.org]. Therefore, it is possible
+to make distributed systems running Rust, but managing the network cluster or processes may be more easily done using
+another language such as Python. Nevertheless, Rust is a nice solution to implement the performance-critical parts of a
+distributed system.
+
+In the context of =nfdeterminize=, a distributed system is simulated by spawning processes on the same machine, and having
+them communicate using ZeroMQ. While =ipc-channel= passes file descriptors over sockets under Unix for inter-process messaging,
+ZeroMQ is more complete, as it supports a lot more kinds of transports such as TCP, which =nfdeterminize= uses.
+
 
 * Testing & Benchmarking
 The main purpose of NFA determinization and minimization in the context of this paper is the description of the language
@@ -261,11 +329,18 @@ Hopcroft's algorithm. However, they do demonstrate some level of correctness in 
 
 ** Benchmarking
 By context of the research, it is natural that most of the test cases used to gauge
-performance of the system are token passing networks.
+performance of the system are token passing networks. To do so, a set of benchmarks is used to
+compare the performance of the multiple system configurations on a set of sce
+
+On all cases, benchmarks are run on a 12-threads Intel i5-11400 machine, with 32GB of RAM. All iterations
+take 25 run samples, with 3 seconds of warmup between iterations. Such methods avoids skewing the results
+down because of continuous CPU operation.
+
+Results are written to a CSV file, which is then used to generate comparison tables based on performance.
 
 *** GAP-generated NFAs
 First of all, automatons generated by GAP are used to test determinization and minimization. GAP \cite{GAPSystem} is
-as system for computational discrete algebra, which provides a programming language and a couple of libraries, two of
+a system for computational discrete algebra, which provides a programming language and a couple of libraries, two of
 which being =Automata= and =PatternClass=. The =PatternClass= library provides methods to generate multiple kinds of token passing
 networks, such as the buffer and stack TPN, and some functions to generally convert graphs into NFAs.
 
@@ -293,8 +368,6 @@ kinds of TPNs are used to stress test different parts of the system.
 
 Finally, to measure the speed of each implementation, a measure of \(k\) for the biggest 3-buffer-\(k\)-stack TPN that
 can be determinized and determinized in under a minute.
-
-On all cases, benchmarks are run on a 8-core 16-thread Intel machine.
 
 * Sequential Approach
 ** Approach to Determinization
@@ -365,15 +438,41 @@ The solution implemented in the program is as such -
 
 + The compressed array is inserted into the hash map. State storage size has been decreased for a moderate speed cost.
 
-
 In =nfdeterminize=, this data structure is defined as a =Ubig= struct, which stands for =unsigned integer=. It is defined in
 the =ubig.rs= source file.
+
+*** \epsilon transitions
+
+It is important to note during determinization, that the majority of a token passing network's automaton's transitions are
+\epsilon transitions. However, \epsilon transitions in general contribute lightly to the final DFA, and take up a considerable amount
+of time when constructing a set of states during superset construction. There are 2 solutions to this problem:
++ Caching the final set of states for all states in the NFA, and lookup the cache when the state is checked again later on,
++ Removing \epsilon transitions from the NFA before feeding it to the determinization algorithm.
+
+However, these approaches present some severe downsides.
+
+Firstly, caching takes uses extra memory for the problem, which
+may be better spent for supporting bigger automatas. Counterintuitively, this approach may also become slower for some
+NFAs as the time taken adding a set of states to the cache has to be taken into account. The =--cache= argument on
+the =run= and =determinize= commands add caching to the determinization process.
+
+On the other hand, building a new NFA without \epsilon transitions is a sort of transformation that can actually increase the
+size of the NFA that will be determinized. The disadvantages here are two-fold - first, extra time is taken making
+an new automaton, which may not be necessary for some NFAs. Second, increasing the size of the NFA may impact
+the time taken by determinization. Therefore, in many cases, \epsilon transition free NFA construction may be slower than
+running NFA determinization with \epsilon transitions taken into account. Nevertheless, the feature is still supported using
+the =--no-epsilon= argument on the =run= and =determinize= commands.
+
+Overall, the performance of caching and \epsilon transition free automata construction depend heavily on the kind of automata that
+is loaded to the program. In the context of token passing networks, it is preferable to generate automatas from specific
+patterns like two-stack or buffer-and-stack, for which running determinization directly is preferred.
 
 ** Approach to Minimization
 While NFA determinization has been a well-known subject for a long time, DFA minimization on the other hand has less well-known algorithms. Out of all the minimization algorithms nowadays, 2 stand out as better
 algorithms than the rest. Those are Hopcroft's algorithm and Brzozowski's minimization algorithm.
 
 *** Hopcroft's Algorithm
+<<para:hopcroft>>
 
 Hopcroft's algorithm, made by J. Hopcroft in 1971\cite{Hopcroft1971AnNL},  is the first, and probably
 the most well-known non-\(O(n^{2})\) time complexity DFA minimization algorithm. It is one of the first partition refinement algorithms.
@@ -440,6 +539,8 @@ Hopcroft's Algorithm, as shown on figure \ref{algo:hopcroft}, has asymptotic tim
 + \(k\): the number of input letters in the alphabet \(\Sigma\),
 + \(n\): the number of states in the initial DFA.
 
+This time complexity makes it the minimization algorithm that achieves the best possible time complexity.
+
 Implementation-wise, the approach here is closer to the implementation described in \cite{Yingjie2009DescribingAN}, with some performance improvements.
 On line \ref{algo:hopcroft:forall} of \ref{algo:hopcroft}, instead of looking for all \(V\) in \(\mathcal{P}\), it is possible to iterate through all partitions
 linked to a state in \(\delta^{-1}(P_{next}, a)\), by keeping a map of what state is linked to which set in \(\mathcal{P}\). Doing so avoids the lengthy process of iterating
@@ -471,12 +572,71 @@ is supported via arguments to the =run= and =determinize= commands of =nfdetermi
 
 * Multithreaded Approach
 ** Towards a Multithreaded Approach
-#+TODO: Pitfalls of sequential approach
-#+TODO: Issues of shared memory in determinization and minimization
+Sequential implementations of NFA determinization and minimization provide excellent results in general for decently-sized
+automatas. However, as the size of the given automatas increases, single threaded performance does not suffice, hence the
+need to extend the determinization and minimization process to multiple threads, or multiple machines.
+
+The main challenge of rewriting determinization and minimization comes from the amount of shared memory used during
+superset construction and Hopcroft's algorithm. While superset construction can be relatively well separated between
+threads and processes, it is harder to do so using Hopcroft's algorithm, as it is optimised for sequential use.
 ** New Algorithms
 *** Determinization
-#+TODO: Pseudocode shared memory superset construction
+To extend the superset construction algorithm for multithreaded usage and avoid as much use of shared memory,
+the algorithm is modified as such, for some number \(k\) of threads:
++ Divide the frontier of research into \(k\) frontiers, such that each thread has access to its own queue,
++ Divide the state to number map to \(k\) parts, accessed by each thread. Each thread hashes the set of states it
+   constructed to determine which hash map the set of states should go to,
++ The main thread keeps track of which thread's frontier is empty, and sends a signal to each thread to kill itself once
+  all frontiers for each thread is empty, which means all the graph has been explored.
+
+This approach mainly uses mutexes for access to shared memory instead of inter-thread messaging. Messaging-based approach
+will instead be used later.
+
+The reason the superset construction algorithm works well for a multithreaded approach is because most of the computation
+going on during superset construction happens when constructing a new state from the frontier, which is a step that
+does not require shared memory. Furthermore, shared memory issues are inhibited by the sharding of the map and the frontier.
+Thus, superset construction greatly profits from multithreading and multiprocessing.
+
+#+CAPTION: Multithreaded Superset Construction Algorithm
+\begin{algorithm}
+\begin{algorithmic}[1]
+\Procedure{SupersetConstruction}{\(M = (S, \Sigma, \delta, S_{0}, T)\)}
+\State \(M\) \gets [(\(S_{0}, 0\))]
+\State \(T^{'}\) \gets []
+\If{\(\exists s \in S_{0}. s \in T\)}
+    \State \(T^{'}\) \gets [\(S_{0}\)]
+\EndIf
+\State \(F\) \gets [\(S_{0}\)]
+\While{\(F \neq \emptyset\)}
+    \State \(S_{next}\) \gets pop from \(F\)
+    \ForAll{\(a \in \Sigma\)}
+        \State \(S^{'}\) \gets {}
+        \ForAll{\(s \in S_{next}\)}
+            \State Add \(s\) and all \epsilon transitions from \(s\)to \(S^{'}\)
+        \EndFor
+        \If{\(S_{next} \notin M\)}
+            \State \(M\) \gets [\(M\), \((S^{'}, \left| M \right|)\)]
+            \If{\(\exists s \in T. s \in S^{'}\)}
+                \State \(T^{'}\) \gets [\(T^{'}, S^{'}\)]
+            \EndIf
+            \State \(F\) \gets [\(F\), \(S^{'}\)]
+        \EndIf
+        \State \(\delta^{'}\) \gets [\(\delta^{'}\), (\(S_{next}\), \(a\), \(S^{'}\))]
+    \EndFor
+\EndWhile
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+
 *** Minimization
+While NFA determinization is relatively easy to extend to multithreaded variants, NFA minimization is much harder to
+parallelize. Hopcroft's minimization algorithm is still the currently best minimization algorithm in terms of time
+complexity, as explained in \ref{para:hopcroft}. However, Hopcroft's algorithm is not efficiently parallelizable.
+Therefore an alternative approach is needed to implement multithreaded minimization.
+
+The DFA minimization parallelization started being approached around the 1990s. Here, a parrallelizable minimization
+algorithm called /partition refinement/ is used, first implemented by \cite{Slavici2012AnEP}, with the exception
+that a RAM-based implementation is used in =nfdeterminize='s case.
 #+TODO: Pseudocode shared memory minimization algo
 ** Benchmarking
 #+TODO: Results against sequential approach
