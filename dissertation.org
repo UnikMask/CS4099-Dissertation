@@ -35,205 +35,23 @@ The algorithms are then tested and compared on a problem class about the determi
 Token Passing Networks.
 
 * Related Works
-Single-threaded NFA determinization and minization algorithms have existed since the 1950s. DFA determinization's /Rabin-Scott superset construction/ algorithm is a well-known determinization algorithm which has existed for a long time. However, DFA
-minimization is younger, and the most well-known minimization algorithm today is Hopcroft's minimization algorithm.
+Single-threaded NFA determinization and minization algorithms have existed since the 1950s.
+DFA determinization's /Rabin-Scott superset construction/ algorithm is a well-known determinization algorithm which has existed for a long time. However, DFA
+minimization is younger, and the most well-known minimization algorithm today is Hopcroft's minimization algorithm \cite{Hopcroft1971AnNL}. However, this algorithm becomes less useful as automatas get larger,
+and the need for parallelization arises.
 
 Parallel NFA determinization algorithms have begun being researched round the 1990s. For example, \cite{508056} ran
 a parallel NFA determinization and minimization algorithm on a supercomputer, using a message passing model instead of
 shared memory.
-
 In 2007, \cite{DBLP_journal} implements a disk-based distributed algorithm for large NFAs. A disk-based approach avoids the
-RAM memory space issues from previous implementations.
+RAM memory space issues from previous implementations. Later, \cite{Slavici2012AnEP} proposes a general programming model
+to migrate RAM-based legacy algorithms into parallel disks - and applies the model to NFA minimization.
 
-Later, \cite{Slavici2012AnEP} proposes a general programming model to migrate RAM-based legacy algorithms into parallel
-disks - and applies the model to NFA determinization and minimization.
-
-In 2020, \cite{Ba2020OnTD} uses Bulk Synchronous Parallel abstract computer model to implement a more
-performant distributed NFA determinization and minization algorithm.
-
-Finally, \cite{A2022ACS} compares both the MapReduce and BSP-based NFA determinization and minimization algorithm, finding
-that the BSP/Pregel based solution outperforms the MapReduce solution.
-
-
-* Token Passing Networks
-<<para:tpn>>
-A token passing network is a directed graph \(G = (V, E)\) such that:
-+ \(V\): Vertices/nodes,
-+ \(E \in (V \times label \times V)\): edges - an edge connects a vertex to another, and may contain a label.
-+ There exists a single input node \(I\) in \(V\) such that there is not ingoing edges to it -
-  \[!\exists I \in V. \nexists v_{2}. \exists v_{1}. \exists e = (v_{1}, v_{2}) \in E. v_{2} = I\]
-+ There exists a single output node \(O\) in \(V\) such that there is no ougoing edges from it -
-  \[!\exists O \in V. \nexists v_{1}. \exists v_{2}. \exists e = (v_{1}, v_{2}) \in E. v_{1} = O\]
-
-Token Passing Networks, originally called Transportation Graphs by \cite{ATKINSON1997103}, were originally studied
-by \cite{ATKINSON1997103} in order to think about what kind of packet permutations might arise from packet delay in networks.
-
-Design patterns in transportation graphs can introduce properties for a transition graph, as well. For example, figure
-\ref{fig:infstack} shows the design of an infinite stack data structure, where \(S\) represents an infinite number
-of nodes connected as shows figure \ref{fig:stackinsides}.
-
-#+CAPTION: Example of a stack TPN
-#+ATTR_LATEX: :float nil
-\begin{figure}
-\centering
-\begin{tikzpicture}[main/.style = {draw, circle}]
-    \node[main] (1) {$I$};
-    \node[main] (2) [right of=1] {$S$};
-    \node[main] (3) [right of=2] {$O$};
-    \draw[->] (1) -- (2);
-    \draw[->] (2) -- (3);
-\end{tikzpicture}
-\label{fig:infstack}
-\end{figure}
-
-
-#+CAPTION: Inner Workings of a size 3 TPN stack
-#+ATTR_LATEX: :float nil
-\begin{figure}
-\centering
-\begin{tikzpicture}[main/.style = {draw, circle}]
-    \node[main] (1) {$S_{1}$};
-    \node[main] (2) [below of=1] {$S_{2}$};
-    \node[main] (3) [below of=2] {$S_{3}$};
-    \draw[->] (1) -- (2);
-    \draw[->] (2) -- (1);
-    \draw[->] (2) -- (3);
-    \draw[->] (3) -- (2);
-\end{tikzpicture}
-\label{fig:stackinsides}
-\end{figure}
-
-Transportation graphs are used as such:
-+ Each node can store one "token",
-+ "Tokens" can be fetched from the input node \(I\) to the next node,
-+ "Tokens" must be transported to the output node \(O\),
-+ After all "tokens" from the input stream are consumed, there should be no tokens remaining in the graph.
-
-Tokens are kept in track by keeping the order at which the tokens arrived in. Therefore, it is possible to study the
-possible order at which the tokens arrive at with a given transportation graph.
-
-
-** Permutation Classes and 3-1-2 avoidance
-As described previously, it is possible to describe what possible orders the tokens may arrive at from a token passing
-network. Such area of study comes from a property of stacks, which is what kinds of permutations are Stack Sortable.
-
-For example, \cite{Waton2007onPC} describes properties of stacks in regards to what permutations they accept.
-
-#+CAPTION: Graphical Example of a stack
-#+ATTR_LATEX: :float nil
-\begin{figure}
-\centering
-\begin{tikzpicture} [main/.style = {draw}]
-    \draw (0, 0) -- (1, 0) -- (1, -2) -- (2, -2) -- (2, 0) -- (3, 0);
-    \node (input) at (2.5, 0.25) {Input};
-    \node (output) at (0.5, 0.25) {Output};
-\end{tikzpicture}
-\label{fig:graphstack}
-\end{figure}
-
-Figure \ref{fig:graphstack} shows a graphical representation of a stack, with an input stream on the right, containing
-a stream of tokens, and an output stream on the left, which accepts tokens. On one hand, figure \ref{fig:graphperms}
-describes a permutation which is accepted by a stack.
-
-
-#+CAPTION: Successful Stack Permutation
-#+ATTR_LATEX: :float nil
-\begin{figure}
-\centering
-\begin{tikzpicture} [main/.style = {draw}]
-    \draw (-0.25, 0) -- (0.5, 0) -- (0.5, -1) -- (1, -1) -- (1, 0) -- (1.75, 0);
-    \node (input) at (1.5, 0.25) {1 2 3};
-    \node (output) at (0, 0.25) {};
-\end{tikzpicture}
-\begin{tikzpicture} [main/.style = {draw}]
-    \draw (-0.25, 0) -- (0.5, 0) -- (0.5, -1) -- (1, -1) -- (1, 0) -- (1.75, 0);
-    \node (input) at (1.5, 0.25) {2 3};
-    \node (s1) at (0.75, -0.75) {1};
-    \node (output) at (0, 0.25) {};
-\end{tikzpicture}
-\begin{tikzpicture} [main/.style = {draw}]
-    \draw (-0.25, 0) -- (0.5, 0) -- (0.5, -1) -- (1, -1) -- (1, 0) -- (1.75, 0);
-    \node (input) at (1.5, 0.25) {3};
-    \node (s1) at (0.75, -0.75) {1};
-    \node (s2) at (0.75, -0.25) {2};
-    \node (output) at (0, 0.25) {};
-\end{tikzpicture}
-\begin{tikzpicture} [main/.style = {draw}]
-    \draw (-0.25, 0) -- (0.5, 0) -- (0.5, -1) -- (1, -1) -- (1, 0) -- (1.75, 0);
-    \node (input) at (1.5, 0.25) {};
-    \node (s1) at (0.75, -0.75) {1};
-    \node (s2) at (0.75, -0.25) {2};
-    \node (output) at (0, 0.25) {3};
-\end{tikzpicture}
-\begin{tikzpicture} [main/.style = {draw}]
-    \draw (-0.25, 0) -- (0.5, 0) -- (0.5, -1) -- (1, -1) -- (1, 0) -- (1.75, 0);
-    \node (input) at (1.5, 0.25) {};
-    \node (s1) at (0.75, -0.75) {1};
-    \node (output) at (0, 0.25) {3 2};
-\end{tikzpicture}
-\begin{tikzpicture} [main/.style = {draw}]
-    \draw (-0.25, 0) -- (0.5, 0) -- (0.5, -1) -- (1, -1) -- (1, 0) -- (1.75, 0);
-    \node (input) at (1.25, 0.25) {};
-    \node (output) at (0, 0.25) {3 2 1};
-\end{tikzpicture}
-\label{fig:graphperms}
-\end{figure}
-
-On the other hand, \ref{fig:312avoidance} presents a permutation which is is not accepted by a stack. As the figure shows,
-it is possible to pass the 3rd token to the output first, but then it is impossible to pass the first token, as token 2 is
-at the front. This class of pattern is called 3-1-2 avoidance/ 2-3-1 avoidance.
-
-The 3-1-2 pattern or 2-3-1 pattern depends
-on whether the stack tries reorder a sequence of tokens (2-3-1 exclusion), or it tries to permute an ordered sequence.
-It is therefore said that 2-3-1 is the inverse pattern of 3-1-2.
-
-#+CAPTION: 3-1-2 Avoidance in a Stack
-#+ATTR_LATEX: :float nil
-\begin{figure}
-\centering
-\begin{tikzpicture} [main/.style = {draw}]
-    \draw (0, 0) -- (1, 0) -- (1, -2) -- (2, -2) -- (2, 0) -- (3, 0);
-    \node (input) at (2.5, 0.25) {1 2 3};
-    \node (output) at (0.5, 0.25) {};
-\end{tikzpicture}
-\begin{tikzpicture} [main/.style = {draw}]
-    \draw (0, 0) -- (1, 0) -- (1, -2) -- (2, -2) -- (2, 0) -- (3, 0);
-    \node (input) at (2.5, 0.25) {2 3};
-    \node (s1) at (1.5, -1.75) {1};
-    \node (output) at (0.5, 0.25) {};
-\end{tikzpicture}
-\begin{tikzpicture} [main/.style = {draw}]
-    \draw (0, 0) -- (1, 0) -- (1, -2) -- (2, -2) -- (2, 0) -- (3, 0);
-    \node (input) at (2.5, 0.25) {3};
-    \node (s1) at (1.5, -1.75) {1};
-    \node (s2) at (1.5, -1.25) {2};
-    \node (output) at (0.5, 0.25) {};
-\end{tikzpicture}
-\begin{tikzpicture} [main/.style = {draw}]
-    \draw (0, 0) -- (1, 0) -- (1, -2) -- (2, -2) -- (2, 0) -- (3, 0);
-    \node (input) at (2.5, 0.25) {};
-    \node (s1) at (1.5, -1.75) {1};
-    \node (s2) at (1.5, -1.25) {2};
-    \node (output) at (0.5, 0.25) {3};
-\end{tikzpicture}
-\label{fig:312avoidance}
-\end{figure}
-
-Thus, the stack model can be modelled with transportation graphs using a stack of nodes, hence the study of accepted
-permutations for a transportation graph.
-
-** Conversion into NFA
-A property of token passing networks, is that they can be converted into NFAs, in which the alphabet represents the
-rank encoding of a token, and a state is represented by the order of a token on the initial ordered input stream.
-
-The following definition from \cite{Waton2007onPC} defines a /rank encoding/ -
-\begin{quote}
-The $rank$ $encoding$ of a permutation is generated by replacing each element by its value relative to those
-elements which come after it.
-\end{quote}
-
-From the rank encoding it is easy to describe the language of all accepted permutations of a transportation graph, hence
-the wish to convert transportation graphs into NFAs, and to determinize and minimize them.
+Finally, the technologies and distribution models of the 2010s have affected the way distributed computing is done in
+the case of NFA determinization and minimization. In 2020, \cite{Ba2020OnTD} uses Bulk Synchronous Parallel abstract computer model to implement a more
+performant distributed NFA determinization and minization algorithm. Later, in 2022,
+\cite{A2022ACS} compares both the MapReduce and a Bulk Synchonous Parallel-based NFA determinization and minimization algorithm,
+finding that the BSP/Pregel based solution outperforms the MapReduce solution.
 
 
 * The =nfdeterminize= System
@@ -291,7 +109,7 @@ Rust being a relatively new language, it has at the current moment limited suppo
 however, that wrap the docker API for Rust.
 
 Aside from Docker, Rust processes can still communicate between each other using
-either =ipc-channel=[fn:: https://github.com/ip-channel], or using ZeroMQ[fn:: https://zeromq.org]. Therefore, it is possible
+either =ipc-channel=[fn:: https://github.com/servo/ipc-channel], or using ZeroMQ[fn:: https://zeromq.org]. Therefore, it is possible
 to make distributed systems running Rust, but managing the network cluster or processes may be more easily done using
 another language such as Python. Nevertheless, Rust is a nice solution to implement the performance-critical parts of a
 distributed system.
@@ -299,6 +117,7 @@ distributed system.
 In the context of =nfdeterminize=, a distributed system is simulated by spawning processes on the same machine, and having
 them communicate using ZeroMQ. While =ipc-channel= passes file descriptors over sockets under Unix for inter-process messaging,
 ZeroMQ is more complete, as it supports a lot more kinds of transports such as TCP, which =nfdeterminize= uses.
+
 
 * Sequential Approach
 ** Approach to Determinization
@@ -569,20 +388,13 @@ The DFA minimization parallelization started being approached around the 1990s. 
 algorithm called /partition refinement/ is used, first implemented by \cite{Slavici2012AnEP}, with the exception
 that a RAM-based implementation is used in =nfdeterminize='s case.
 #+TODO: Pseudocode shared memory minimization algo
-** Benchmarking
-#+TODO: Results against sequential approach
 
+* Multiprocess/Distributed Approach
+** Shared Memory Determinization
+** Shared Memory Parallel Minimization
 
 * Benchmarking
 
-** Behaviour Testing
-The first step in the testing and benchmarking process is to test for correctness of the programs' behaviours. Here,
-it is done by unit testing the determinization and minimization algorithm by using NFA and DFA examples that rely on
-particular behaviours of each of the determinization and minimization algorithms.
-
-*** Testing Determinization
-*** Testing Minimization
-** Benchmarking
 By context of the research, it is natural that most of the test cases used to gauge
 performance of the system are token passing networks. To do so, a set of benchmarks is used to
 compare the performance of the multiple system configurations on a set of sce
@@ -593,7 +405,7 @@ down because of continuous CPU operation.
 
 Results are written to a CSV file, which is then used to generate comparison tables based on performance.
 
-*** GAP-generated NFAs
+** GAP-generated NFAs
 First of all, automatons generated by GAP are used to test determinization and minimization. GAP \cite{GAPSystem} is
 a system for computational discrete algebra, which provides a programming language and a couple of libraries, two of
 which being =Automata= and =PatternClass=. The =PatternClass= library provides methods to generate multiple kinds of token passing
@@ -606,7 +418,7 @@ finding new states.
 
 In regards to benchmarking, buffer-and-stack NFAs are generated using GAP - from buffer size 2 to 3, and stack size 2 to 7.
 
-*** Self-generated NFAs
+** Self-generated NFAs
 On top of the NFAs generated by GAP, the program is also able to generate its own NFAs out of token passing network
 patterns. While GAP has a general algorithm for converting TPNs into NFAs, which leads to NFAs with lots of extra information
 in form of \epsilon transitions, self-generated NFAs are optimised for the patterns they're built for. This means that the leading
@@ -630,6 +442,7 @@ can be determinized and determinized in under a minute.
 ** Sequential Algorithm Evaluation
 ** Multithreading Against Sequential
 ** Multiprocessing Approach and Scaling
+
 
 * Conclusion
 
@@ -812,6 +625,188 @@ Hopcroft's algorithm. However, they do demonstrate some level of correctness in 
 
 The figures below demonstrate the patterns and cases that were tested to show the implementation
 correctness of the written minimization algorithms.
+
+** Token Passing Networks
+<<para:tpn>>
+A token passing network is a directed graph \(G = (V, E)\) such that:
++ \(V\): Vertices/nodes,
++ \(E \in (V \times label \times V)\): edges - an edge connects a vertex to another, and may contain a label.
++ There exists a single input node \(I\) in \(V\) such that there is not ingoing edges to it -
+  \[!\exists I \in V. \nexists v_{2}. \exists v_{1}. \exists e = (v_{1}, v_{2}) \in E. v_{2} = I\]
++ There exists a single output node \(O\) in \(V\) such that there is no ougoing edges from it -
+  \[!\exists O \in V. \nexists v_{1}. \exists v_{2}. \exists e = (v_{1}, v_{2}) \in E. v_{1} = O\]
+
+Token Passing Networks, originally called Transportation Graphs by \cite{ATKINSON1997103}, were originally studied
+by \cite{ATKINSON1997103} in order to think about what kind of packet permutations might arise from packet delay in networks.
+
+Design patterns in transportation graphs can introduce properties for a transition graph, as well. For example, figure
+\ref{fig:infstack} shows the design of an infinite stack data structure, where \(S\) represents an infinite number
+of nodes connected as shows figure \ref{fig:stackinsides}.
+
+#+CAPTION: Example of a stack TPN
+#+ATTR_LATEX: :float nil
+\begin{figure}
+\centering
+\begin{tikzpicture}[main/.style = {draw, circle}]
+    \node[main] (1) {$I$};
+    \node[main] (2) [right of=1] {$S$};
+    \node[main] (3) [right of=2] {$O$};
+    \draw[->] (1) -- (2);
+    \draw[->] (2) -- (3);
+\end{tikzpicture}
+\label{fig:infstack}
+\end{figure}
+
+
+#+CAPTION: Inner Workings of a size 3 TPN stack
+#+ATTR_LATEX: :float nil
+\begin{figure}
+\centering
+\begin{tikzpicture}[main/.style = {draw, circle}]
+    \node[main] (1) {$S_{1}$};
+    \node[main] (2) [below of=1] {$S_{2}$};
+    \node[main] (3) [below of=2] {$S_{3}$};
+    \draw[->] (1) -- (2);
+    \draw[->] (2) -- (1);
+    \draw[->] (2) -- (3);
+    \draw[->] (3) -- (2);
+\end{tikzpicture}
+\label{fig:stackinsides}
+\end{figure}
+
+Transportation graphs are used as such:
++ Each node can store one "token",
++ "Tokens" can be fetched from the input node \(I\) to the next node,
++ "Tokens" must be transported to the output node \(O\),
++ After all "tokens" from the input stream are consumed, there should be no tokens remaining in the graph.
+
+Tokens are kept in track by keeping the order at which the tokens arrived in. Therefore, it is possible to study the
+possible order at which the tokens arrive at with a given transportation graph.
+
+
+*** Permutation Classes and 3-1-2 avoidance
+As described previously, it is possible to describe what possible orders the tokens may arrive at from a token passing
+network. Such area of study comes from a property of stacks, which is what kinds of permutations are Stack Sortable.
+
+For example, \cite{Waton2007onPC} describes properties of stacks in regards to what permutations they accept.
+
+#+CAPTION: Graphical Example of a stack
+#+ATTR_LATEX: :float nil
+\begin{figure}
+\centering
+\begin{tikzpicture} [main/.style = {draw}]
+    \draw (0, 0) -- (1, 0) -- (1, -2) -- (2, -2) -- (2, 0) -- (3, 0);
+    \node (input) at (2.5, 0.25) {Input};
+    \node (output) at (0.5, 0.25) {Output};
+\end{tikzpicture}
+\label{fig:graphstack}
+\end{figure}
+
+Figure \ref{fig:graphstack} shows a graphical representation of a stack, with an input stream on the right, containing
+a stream of tokens, and an output stream on the left, which accepts tokens. On one hand, figure \ref{fig:graphperms}
+describes a permutation which is accepted by a stack.
+
+
+#+CAPTION: Successful Stack Permutation
+#+ATTR_LATEX: :float nil
+\begin{figure}
+\centering
+\begin{tikzpicture} [main/.style = {draw}]
+    \draw (-0.25, 0) -- (0.5, 0) -- (0.5, -1) -- (1, -1) -- (1, 0) -- (1.75, 0);
+    \node (input) at (1.5, 0.25) {1 2 3};
+    \node (output) at (0, 0.25) {};
+\end{tikzpicture}
+\begin{tikzpicture} [main/.style = {draw}]
+    \draw (-0.25, 0) -- (0.5, 0) -- (0.5, -1) -- (1, -1) -- (1, 0) -- (1.75, 0);
+    \node (input) at (1.5, 0.25) {2 3};
+    \node (s1) at (0.75, -0.75) {1};
+    \node (output) at (0, 0.25) {};
+\end{tikzpicture}
+\begin{tikzpicture} [main/.style = {draw}]
+    \draw (-0.25, 0) -- (0.5, 0) -- (0.5, -1) -- (1, -1) -- (1, 0) -- (1.75, 0);
+    \node (input) at (1.5, 0.25) {3};
+    \node (s1) at (0.75, -0.75) {1};
+    \node (s2) at (0.75, -0.25) {2};
+    \node (output) at (0, 0.25) {};
+\end{tikzpicture}
+\begin{tikzpicture} [main/.style = {draw}]
+    \draw (-0.25, 0) -- (0.5, 0) -- (0.5, -1) -- (1, -1) -- (1, 0) -- (1.75, 0);
+    \node (input) at (1.5, 0.25) {};
+    \node (s1) at (0.75, -0.75) {1};
+    \node (s2) at (0.75, -0.25) {2};
+    \node (output) at (0, 0.25) {3};
+\end{tikzpicture}
+\begin{tikzpicture} [main/.style = {draw}]
+    \draw (-0.25, 0) -- (0.5, 0) -- (0.5, -1) -- (1, -1) -- (1, 0) -- (1.75, 0);
+    \node (input) at (1.5, 0.25) {};
+    \node (s1) at (0.75, -0.75) {1};
+    \node (output) at (0, 0.25) {3 2};
+\end{tikzpicture}
+\begin{tikzpicture} [main/.style = {draw}]
+    \draw (-0.25, 0) -- (0.5, 0) -- (0.5, -1) -- (1, -1) -- (1, 0) -- (1.75, 0);
+    \node (input) at (1.25, 0.25) {};
+    \node (output) at (0, 0.25) {3 2 1};
+\end{tikzpicture}
+\label{fig:graphperms}
+\end{figure}
+
+On the other hand, \ref{fig:312avoidance} presents a permutation which is is not accepted by a stack. As the figure shows,
+it is possible to pass the 3rd token to the output first, but then it is impossible to pass the first token, as token 2 is
+at the front. This class of pattern is called 3-1-2 avoidance/ 2-3-1 avoidance.
+
+The 3-1-2 pattern or 2-3-1 pattern depends
+on whether the stack tries reorder a sequence of tokens (2-3-1 exclusion), or it tries to permute an ordered sequence.
+It is therefore said that 2-3-1 is the inverse pattern of 3-1-2.
+
+#+CAPTION: 3-1-2 Avoidance in a Stack
+#+ATTR_LATEX: :float nil
+\begin{figure}
+\centering
+\begin{tikzpicture} [main/.style = {draw}]
+    \draw (0, 0) -- (1, 0) -- (1, -2) -- (2, -2) -- (2, 0) -- (3, 0);
+    \node (input) at (2.5, 0.25) {1 2 3};
+    \node (output) at (0.5, 0.25) {};
+\end{tikzpicture}
+\begin{tikzpicture} [main/.style = {draw}]
+    \draw (0, 0) -- (1, 0) -- (1, -2) -- (2, -2) -- (2, 0) -- (3, 0);
+    \node (input) at (2.5, 0.25) {2 3};
+    \node (s1) at (1.5, -1.75) {1};
+    \node (output) at (0.5, 0.25) {};
+\end{tikzpicture}
+\begin{tikzpicture} [main/.style = {draw}]
+    \draw (0, 0) -- (1, 0) -- (1, -2) -- (2, -2) -- (2, 0) -- (3, 0);
+    \node (input) at (2.5, 0.25) {3};
+    \node (s1) at (1.5, -1.75) {1};
+    \node (s2) at (1.5, -1.25) {2};
+    \node (output) at (0.5, 0.25) {};
+\end{tikzpicture}
+\begin{tikzpicture} [main/.style = {draw}]
+    \draw (0, 0) -- (1, 0) -- (1, -2) -- (2, -2) -- (2, 0) -- (3, 0);
+    \node (input) at (2.5, 0.25) {};
+    \node (s1) at (1.5, -1.75) {1};
+    \node (s2) at (1.5, -1.25) {2};
+    \node (output) at (0.5, 0.25) {3};
+\end{tikzpicture}
+\label{fig:312avoidance}
+\end{figure}
+
+Thus, the stack model can be modelled with transportation graphs using a stack of nodes, hence the study of accepted
+permutations for a transportation graph.
+
+*** Conversion into NFA
+A property of token passing networks, is that they can be converted into NFAs, in which the alphabet represents the
+rank encoding of a token, and a state is represented by the order of a token on the initial ordered input stream.
+
+The following definition from \cite{Waton2007onPC} defines a /rank encoding/ -
+\begin{quote}
+The $rank$ $encoding$ of a permutation is generated by replacing each element by its value relative to those
+elements which come after it.
+\end{quote}
+
+From the rank encoding it is easy to describe the language of all accepted permutations of a transportation graph, hence
+the wish to convert transportation graphs into NFAs, and to determinize and minimize them.
+
+** User Manual
 
 \bibliographystyle{ieeetr}
 \bibliography{dissertation}
