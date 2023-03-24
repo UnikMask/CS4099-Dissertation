@@ -8,6 +8,7 @@
 #+LATEX_HEADER: \usepackage{fontspec}
 #+LATEX_HEADER: \usepackage{amsmath}
 #+LATEX_HEADER: \usepackage{tikz}
+#+LATEX_HEADER: \usepackage{array}
 #+LATEX_HEADER: \usetikzlibrary{automata, positioning, arrow}
 #+LATEX_HEADER: \usepackage{algorithm}
 #+LATEX_HEADER: \usepackage{amsthm}
@@ -26,13 +27,15 @@ Finite Automata (NFAs).
 It is well-known that both structures describe the same set of languages (regular languages), but
 it is in general significantly easier to work with DFAs than NFAs. Some problems are first transcribed into NFAs, therefore
 the determinization of a DFA into a NFA, and it's minimization, are critical steps into the understanding of those problems.
-However, both those problems are computationally complex and memory intensive,
-hence the need to do it efficiently, and to distribute the computation towards multiple systems.
+However, both those problems are computationally complex and memory intensive, hence the need to do it efficiently, and to
+distribute the computation towards multiple systems.
 
-Here, a set of determinization and minimization algorithms, ranging from single-threaded to distributed, is described and
-solutions are implemented to solve that task, in a sequential, multi-threaded, and multi-process manner.
-The algorithms are then tested and compared on a problem class about the determinization of NFAs: Transportation Graphs AKA
-Token Passing Networks.
+In this paper, is achieved a program that implements a set of determinization and minimization algorithms, ranging from
+single-threaded to distributed, in the goal of achieving fast, efficient, and scalable determinization and minimization of
+NFAs. Further algorithms and solutions are described, and some implemented, that try to achieve that task. The algorithms are
+then tested and compared on a problem class about the determinization of NFAs: Transportation Graphs AKA Token Passing Networks.
+
+Finally, the topic of determinization and minimization is explored for higher classes of machines, such as Pushdown Automatas.
 
 * Related Works
 Single-threaded NFA determinization and minization algorithms have existed since the 1950s.
@@ -53,6 +56,60 @@ performant distributed NFA determinization and minization algorithm. Later, in 2
 \cite{A2022ACS} compares both the MapReduce and a Bulk Synchonous Parallel-based NFA determinization and minimization algorithm,
 finding that the BSP/Pregel based solution outperforms the MapReduce solution.
 
+
+* Definitions
+To understand the presentation of the algorithms in this paper, and most notably the definitions of the minimization algorithms,
+it is useful to present the definitions that will be used thereafter. Those are as such:
+
+*Finite State Machine* - Let \(M = (S, \Sigma, \delta, S_{0}, T)\) be a deterministic finite state machine (DFA) where:
++ \(S\) is the set of all states in \(M\)
++ \(\Sigma\): Alphabet,
++ \(\delta \in S \times \Sigma \times S\): Transition function,
++ \(S_{0}\): Starting states,
++ \(T\): Accepting states.
+
+*Nondeterministic Finite State Machine* - let \(N = (S, \Sigma, \delta, S_{0}, T)\) be a non-deterministic finite state machine (NFA) where:
++ \(S\): Set of states,
++ \(\Sigma\): Alphabet,
++ \(\delta \in {S \cup {\epsilon}} \times \Sigma \times \mathds{P}(S)\): Non-deterministic transition function - where \(\mathds{P}(S)\) is the powerset of S,
++ \(S_{0}\): Starting states,
++ \(T\): Accepting states.
+
+*FSM Language* \cite{berstel2010minimization}
+- Let \(L(M)\) be the language that the finite state machine \(M\) describes. For each state \(s \in S\), it is
+possible to define some subautomaton of \(M\) rooted at
+Let \(L_{s}(M)\) be the set of words recognized by the subautomaton of \(M\) rooted at state \(s\), or the /future/ of state \(s\).
+In a finite state machine, 2 states \(p\) and \(q\) can be considered as equivalent \(p \equiv q\) if and only if the /futures/ of
+\(p\) and \(q\) are the same, that is:
+
+\[p \equiv q \Leftrightarrow L_{p}(M) = L_{q}(M)\]
+
+This relationship is called the /Nerode congruence/.
+
+Hence, a *minimal automaton* is definable as some DFA \(M = (S, \Sigma, \delta, S_{0}, T\), such that:
+\[\forall p \in S. \forall q \in S. L_{p}(M) \neq L_{q}(M)\]
+
+That is, no two state in a minimal automata may share the same future. All DFA minimization comes down to is the task
+of computing Nerode equivalences between sets of states, until no 2 states from 2 different sets of states are Nerode
+equivalent, upon which a new automata is defined with each of the given sets of states as states.
+
+*Reverse Transitions* - For \(s \in S, a \in \Sigma\), Let \(\delta^{-1}(s, a) = {s^{'} \in S | \delta(s^{'}, a) = s}\) be the reverse transitions
+of \(s\) for character \(a\). Let \(\mathcal{P}\) be a partition - a collection of sets of states,
+such that \(\forall s \in S. \exists!P \in \mathcal{P}. s \in P\), that is all states of \(M\) must be unique in the partition.
+Furthermore, let \(\delta(P, a), a \in \Sigma\) be the set of states for which a transition from a state in \(P\) lead to.
+Likewise, let \(\delta^{-1}(P, a)\) be the set of states for which a transition to a set in \(P\) leads from.
+
+We can say between 2 sets \(P, R \in \mathcal{P}\), that the set \(R\) can be /split/ by \(\delta^{-1}(P, a)\) into 2 sets:
+\[R \cap \delta^{-1}(P, a) = {s \in R | \delta(s, a) \in P} \text{ and } R \backslash \delta^{-1}(P, a) = {s \in R | \delta(s, a) \notin P} \]
+
+It is important to remark that \(R\) can be split to either 1 or 2, depending on whether all the states in \(R\) are in
+\(\delta^{-1}(P, a)\), or if none of them are in \(\delta^{-1}(P, a)\).
+
+With splitting, the Nerode equivalence in the partition \(\mathcal{P}\) can be defined as the smallest partition for which
+no combination of a set in the partition and a letter in \(\Sigma\) can split another set in the partition in 2.
+
+With those definitions in mind, it will be easier to understand and reason about determinization and minimization throughout
+the paper.
 
 * The =nfdeterminize= System
 The solution that is implemented for this research is a program named =nfdeterminize=. =Nfdeterminize= is a command-line
@@ -165,7 +222,7 @@ is assigned on the final DFA, because the algorithm needs to check if a state ha
 \end{algorithm}
 
 Complexity-wise, the worst-case time complexity of the superset construction is \(O(2^{n})\), where \(n\) is the number of states in the original NFA.
-Such worst-case is unavoidable as the size of the superset of states in the NFA \(\left| \mathds{S}(S) \right| = 2^{\left| S \right|}\), where \(S\) is the set of states in the original NFA.
+Such worst-case is unavoidable as the size of the superset of states in the NFA \(\left| \mathds{P}(S) \right| = 2^{\left| S \right|}\), where \(S\) is the set of states in the original NFA.
 However, this treshold is generally never reached, hence the purpose of the superset construction algorithm.
 
 In terms of implementing the sequential version of the superset construction algorithm, most of the design decision comes in
@@ -301,7 +358,27 @@ ordered vector construction from inverse transformation is done in \(O(n log(n))
 consistently hashing values into a hash set.
 
 Finally, the queue \(Q\) is done in a circular ring buffer as using contiguous memory, instead of a linked list, for faster memory access, while the partition is done as a simple contiguous memory array, as
-it is never needed to pop anything from it. Instead, adding to the partition is done by replacing \(V\) by \(V \cap \delta^{-1}(P_{next}, a)\) and appending \(V \backslash \delta^{-1}(P_{next}, a)\) to the end of \(\mathcal{P}\).
+it is never needed to pop anything from it. Instead, adding to the partition is done by replacing \(V\) by \(V \cap \delta^{-1}(P_{next}, a)\) and appending \(V \backslash \delta^{-1}(P_{next}, a)\) to the end of \(/\mathcal{P}\).
+
+
+*** Moore's Algorithm
+Hopcroft's Algorithm, described and implemented in \ref{para:hopcroft}, is considered as the most efficient
+partition refinement based minimization algorithm. However, the first partition refinement implemented is Moore's Algorithm,
+of which Hopcroft's Algorithm is based on.
+
+Moore's algorithm \cite{Moore1956} is an \(O(n^{2})\) time complexity algorithm for DFA determinization. It is the
+classical algorithm for partition refinement, which works as such:
++ Get an initial partition of 2 sets - final states and non-final states,
++ Until the partition doesn't change, repeat:
+  - Produce a new partition \(\mathcal{P}^{'}\) s.t. \(\forall p, q \in S. \mathcal{P}^{'}[p] = \mathcal{P}^{'}[q] \Leftrightarrow
+    \mathcal{P}[p] = \mathcal{P}[q] \wedge (\forall a \in \Sigma. \mathcal{P}(\delta(p, a)) = \mathcal{P}(\delta(q, a)))\)
+
+The reasoning of this algorithm, is that the partition is iteratively split until \(\nexists P \in \mathcal{P}. \exists a \in \Sigma.
+\exists Q \in \mathcal{P}\) splittable by \(\delta(P, a)\), upon which it can be guaranteed it is the coarsest partition, and therefore
+that the minimal DFA has been found.
+
+Moore's algorithm is not implemented here, as it's time complexity \(O(n^{2})\) makes it less appealing than Hopcroft's
+algorithm, although it is not as limitedly parallelizable as the latter.
 
 *** Brzozowski's Algorithm
 
@@ -439,8 +516,304 @@ can be determinized and determinized in under a minute.
 
 * Results
 ** Comparison of Test Cases
-** Sequential Algorithm Evaluation
+Figure \ref{table:compselfgapaut} shows the evolution of automaton sizes for self-generated buffer and stack TPNs against GAP-generated TPNs. Meanwhile, figure \ref{table:compselfgapseq} A general
+observation that can be derived, is that self-generated TPNs are always initially smaller, and take considerably less
+time to determinize than GAP-generated TPNs. It can also be observed that the GAP-generated automatas grow in size a lot
+quicker than self-generated ones. Furthermore, while the time taken to determinize and minimize self-generated automatas
+barely evolves, with an evolution that is within error margin, the time taken for GAP-generated automatas increases
+significantly over time.
+
+#+begin_src python :async yes :results value :exports none
+import subprocess
+import json
+
+arr = [["b", "s", "Initial self-gen", "Initial GAP-gen", "Intermediary self-gen", "Intermediary GAP-gen", "Final self-gen", "Final GAP-gen"]]
+for i in range(2, 4):
+    for j in range(2, 6):
+        # Get self-generated process results
+        p = subprocess.run(["./nfdeterminize", "--verbose", "--timed", "--file", "/dev/null", "run", "bns", str(i), str(j)], capture_output=True)
+        stdout = p.stdout.decode().split('\n')
+        iselfs = int(stdout[0].split(' ')[-1])
+        mselfs = int(stdout[1].split(' ')[-1])
+        fselfs = int(stdout[2].split(' ')[-1])
+        # Get GAP-generated process output
+
+        fp = f"/cs/home/apjg1/Documents/gitrepos/nfdeterminize/automatons/bns-{i}-{j}.nfa"
+        p = subprocess.run(["./nfdeterminize", "--verbose", "--timed", "--file", "/dev/null", "run", "file", fp], capture_output=True)
+        stdout = p.stdout.decode().split('\n')
+        igaps = int(stdout[0].split(' ')[-1])
+        mgaps = int(stdout[1].split(' ')[-1])
+        fgaps = int(stdout[2].split(' ')[-1])
+        arr.append([i, j, iselfs, igaps, mselfs, mgaps, fselfs, fgaps])
+return arr
+#+end_src
+
+#+RESULTS:
+
+
+#+CAPTION: Comparison between self-generated TPNs and GAP-generated TPNs
+#+ATTR_LATEX: :align |c|c|| m{4em} | m{4em} | m{4em} | m{4em} | m{4em} | m{4em} |
+|---+---+------------------+-----------------+-----------------------+----------------------+----------------+---------------|
+| b | s | Initial self-gen | Initial GAP-gen | Intermediary self-gen | Intermediary GAP-gen | Final self-gen | Final GAP-gen |
+|---+---+------------------+-----------------+-----------------------+----------------------+----------------+---------------|
+|---+---+------------------+-----------------+-----------------------+----------------------+----------------+---------------|
+| 2 | 2 |               18 |              82 |                     3 |                    3 |              3 |             3 |
+| 2 | 3 |               38 |             244 |                     8 |                    8 |              8 |             8 |
+| 2 | 4 |               78 |             730 |                    16 |                   16 |             16 |            16 |
+| 2 | 5 |              158 |            2188 |                    32 |                   32 |             32 |            32 |
+| 3 | 2 |               39 |             460 |                     4 |                    4 |              4 |             4 |
+| 3 | 3 |              117 |            1826 |                    13 |                   13 |             13 |            13 |
+| 3 | 4 |              351 |            7288 |                    33 |                   33 |             33 |            33 |
+| 3 | 5 |             1053 |           29134 |                    85 |                   85 |             85 |            85 |
+|---+---+------------------+-----------------+-----------------------+----------------------+----------------+---------------|
+<<table:compselfgapaut>>
+
+#+begin_src python :async yes :results value :exports none
+import subprocess
+import json
+
+arr = [["b", "s", "self-generated determinize", "GAP-generated determinize", "self-generated minimize", "GAP-generated minimize"]]
+fp_orig = "/cs/home/apjg1/Documents/gitrepos/nfdeterminize/target/criterion"
+estim_loc = "base/estimates.json"
+for i in range(2, 4):
+    for j in range(2, 6):
+        t_selfs = 0.0
+        t_selfm = 0.0
+        with open(f"{fp_orig}/determinize bns {i} {j} Sequential/{estim_loc}") as f:
+           estimates = json.load(f)
+           t_selfs = float (estimates["mean"]["point_estimate"]) / 1000
+        with open(f"{fp_orig}/minimize bns {i} {j} Sequential/{estim_loc}") as f:
+           estimates = json.load(f)
+           t_selfm = float (estimates["mean"]["point_estimate"]) / 1000
+        # Get GAP-generated process output
+
+        t_gaps = 0.0
+        t_gapm = 0.0
+        with open(f"{fp_orig}/determinize file bns {i} {j} Sequential/{estim_loc}") as f:
+           estimates = json.load(f)
+           t_gaps = float (estimates["mean"]["point_estimate"]) / 1000
+        with open(f"{fp_orig}/minimize file bns {i} {j} Sequential/{estim_loc}") as f:
+           estimates = json.load(f)
+           t_gapm += float (estimates["mean"]["point_estimate"]) / 1000
+        arr.append([i, j, round(t_selfs, 2), round(t_gaps, 2), round(t_selfm, 2), round(t_gapm, 2)])
+return arr
+#+end_src
+
+#+RESULTS:
+| b | s | self-generated determinize | GAP-generated determinize | self-generated minimize | GAP-generated minimize |
+| 2 | 2 |                       5.23 |                      21.5 |                    2.28 |                   2.31 |
+| 2 | 3 |                      23.67 |                    116.45 |                    8.14 |                   8.55 |
+| 2 | 4 |                      78.21 |                     644.7 |                   20.27 |                  20.07 |
+| 2 | 5 |                     284.96 |                    3278.8 |                   47.04 |                   47.5 |
+| 3 | 2 |                       16.0 |                    158.57 |                    3.91 |                   3.83 |
+| 3 | 3 |                     107.15 |                   1527.34 |                   16.66 |                   17.0 |
+| 3 | 4 |                     648.39 |                  13325.41 |                   54.03 |                  54.54 |
+| 3 | 5 |                    3320.03 |                  108088.1 |                   184.0 |                 188.63 |
+
+#+CAPTION: Comparison of time taken on self-generated automats vs GAP-generated ones
+#+ATTR_LATEX: :align |c|c||m{4em}|m{4em}|m{4em}|m{4em}|
+|---+---+----------------------------+---------------------------+-------------------------+------------------------|
+| b | s | self-generated determinize | GAP-generated determinize | self-generated minimize | GAP-generated minimize |
+|---+---+----------------------------+---------------------------+-------------------------+------------------------|
+|---+---+----------------------------+---------------------------+-------------------------+------------------------|
+| 2 | 2 |                       5.23 |                      21.5 |                    2.28 |                   2.31 |
+| 2 | 3 |                      23.67 |                    116.45 |                    8.14 |                   8.55 |
+| 2 | 4 |                      78.21 |                     644.7 |                   20.27 |                  20.07 |
+| 2 | 5 |                     284.96 |                    3278.8 |                   47.04 |                   47.5 |
+| 3 | 2 |                       16.0 |                    158.57 |                    3.91 |                   3.83 |
+| 3 | 3 |                     107.15 |                   1527.34 |                   16.66 |                   17.0 |
+| 3 | 4 |                     648.39 |                  13325.41 |                   54.03 |                  54.54 |
+| 3 | 5 |                    3320.03 |                  108088.1 |                   184.0 |                 188.63 |
+|---+---+----------------------------+---------------------------+-------------------------+------------------------|
+<<table:compselfgapseq>>
+It is possible to establish now that there are only advantages to using the self-generated NFAs instead of the GAP-generated
+ones when it comes to researching about token passing networks. However, research of allowed permutations in sequential
+stack TPNs is often further simplified to searching about stack and buffer TPNs. The reasoning behind it is that the
+produced NFAs are usually less complex than two-stack ones.
+
+=Nfdeterminize= supports the generation of both TPN types. The question is therefore - are buffer and stack TPNs less complex
+than two-stack TPNs, and if so, what are the difference between both that lead to such results.
+
+The first difference between two-stack and buffer-and-stack lies in how they are generated. Let's assume that
+=nfdeterminize='s NFA generator is used here. The main difference between buffer-and-stack and two-stack is how during
+automata generation, on each iteration, at most 1 \(\epsilon\) transition from the first stack to the 2nd stack is made,
+while at most \(k\) \(\epsilon\) transitions are made from the buffer to the stack for the buffer and stack automaton.
+
+#+begin_src python :async yes :results value :exports none
+import subprocess
+import json
+
+arr = [["s1", "s2", "Initial bns", "Initial two-stack", "Intermediary bns", "Intermediary two-stack", "Final bns", "Final two-stack"]]
+for i in range(2, 4):
+    for j in range(2, 8):
+        # Get self-generated process results
+        p = subprocess.run(["./nfdeterminize", "--verbose", "--timed", "--file", "/dev/null", "run", "bns", str(i), str(j)], capture_output=True)
+        stdout = p.stdout.decode().split('\n')
+        ibns = int(stdout[0].split(' ')[-1])
+        mbns = int(stdout[1].split(' ')[-1])
+        fbns = int(stdout[2].split(' ')[-1])
+
+        p = subprocess.run(["./nfdeterminize", "--verbose", "--timed", "--file", "/dev/null", "run", "two-stack", str(i), str(j)], capture_output=True)
+        stdout = p.stdout.decode().split('\n')
+        its = int(stdout[0].split(' ')[-1])
+        mts = int(stdout[1].split(' ')[-1])
+        fts = int(stdout[2].split(' ')[-1])
+
+        arr.append([i, j, ibns, its, mbns, mts, fbns, fts])
+return arr
+#+end_src
+
+#+RESULTS:
+| s1 | s2 | Initial bns | Initial two-stack | Intermediary bns | Intermediary two-stack | Final bns | Final two-stack |
+|  2 |  2 |          18 |                18 |                3 |                      3 |         3 |               3 |
+|  2 |  3 |          38 |                38 |                8 |                      8 |         8 |               8 |
+|  2 |  4 |          78 |                78 |               16 |                     16 |        16 |              16 |
+|  2 |  5 |         158 |               158 |               32 |                     32 |        32 |              32 |
+|  2 |  6 |         318 |               318 |               64 |                     64 |        64 |              64 |
+|  2 |  7 |         638 |               638 |              128 |                    128 |       128 |             128 |
+|  3 |  2 |          39 |                36 |                4 |                     10 |         4 |              10 |
+|  3 |  3 |         117 |                96 |               13 |                     35 |        13 |              35 |
+|  3 |  4 |         351 |               253 |               33 |                    177 |        33 |             177 |
+|  3 |  5 |        1053 |               664 |               85 |                   1070 |        85 |            1070 |
+|  3 |  6 |        3159 |              1740 |              221 |                   6682 |       221 |            6682 |
+|  3 |  7 |        9477 |              4557 |              577 |                  41888 |       577 |           41888 |
+
+
+#+CAPTION: Automaton size comparison between buffer-and-stack NFAs and Two-stack NFAs
+#+ATTR_LATEX: :align |c|c|| m{4em} | m{4em} | m{4em} | m{4em} | m{4em} | m{4em} |
+|----+----+-------------+-------------------+------------------+------------------------+-----------+-----------------|
+| s1 | s2 | Initial bns | Initial two-stack | Intermediary bns | Intermediary two-stack | Final bns | Final two-stack |
+|----+----+-------------+-------------------+------------------+------------------------+-----------+-----------------|
+|----+----+-------------+-------------------+------------------+------------------------+-----------+-----------------|
+|  2 |  2 |          18 |                18 |                3 |                      3 |         3 |               3 |
+|  2 |  3 |          38 |                38 |                8 |                      8 |         8 |               8 |
+|  2 |  4 |          78 |                78 |               16 |                     16 |        16 |              16 |
+|  2 |  5 |         158 |               158 |               32 |                     32 |        32 |              32 |
+|  2 |  6 |         318 |               318 |               64 |                     64 |        64 |              64 |
+|  2 |  7 |         638 |               638 |              128 |                    128 |       128 |             128 |
+|  3 |  2 |          39 |                36 |                4 |                     10 |         4 |              10 |
+|  3 |  3 |         117 |                96 |               13 |                     35 |        13 |              35 |
+|  3 |  4 |         351 |               253 |               33 |                    177 |        33 |             177 |
+|  3 |  5 |        1053 |               664 |               85 |                   1070 |        85 |            1070 |
+|  3 |  6 |        3159 |              1740 |              221 |                   6682 |       221 |            6682 |
+|  3 |  7 |        9477 |              4557 |              577 |                  41888 |       577 |           41888 |
+|----+----+-------------+-------------------+------------------+------------------------+-----------+-----------------|
+<<table:tsvsbns>>
+
+Two major remarks can be done from figure \ref{table:tsvsbns}. First, the size of both initial automatas is
+very similar, and evolves similarly. On buffer/first stack size \(= 2\), they're even equal. This similarity is an
+example of how closely related those 2 TPN patterns are.
+
+Then, from observations of the intermediary DFA sizes for bns and two-stack TPNs on \(s1 = 3\),
+it can be seen how much quicker the size of the two-stack TPN increases compared to the size of the buffer-and-stack TPN,
+despite how the initial size of the buffer-and-stack TPN was bigger than that of the two-stack TPN. This evolution may be
+caused due to how more states in the buffer-and-stack NFA may share the same state in the intermediary DFA, due to the
+larger number of \(\epsilon\) transitions.
+#+begin_src python :async yes :results value :exports none
+import subprocess
+import json
+
+arr = [["b", "s", "two-stack determinize", "bns determinize", "two-stack minimize", "bns minimize"]]
+fp_orig = "/cs/home/apjg1/Documents/gitrepos/nfdeterminize/target/criterion"
+estim_loc = "base/estimates.json"
+for i in range(2, 4):
+    for j in range(2, 6):
+        # Get self-generated process results
+        p = subprocess.run(["./nfdeterminize", "--verbose", "--timed", "--file", "/dev/null", "run", "bns", str(i), str(j)], capture_output=True)
+        stdout = p.stdout.decode().split('\n')
+        nselfs = int(stdout[0].split(' ')[-1])
+        t_selfs = 0.0
+        with open(f"{fp_orig}/determinize bns {i} {j} Sequential/{estim_loc}") as f:
+           estimates = json.load(f)
+           t_selfs = float (estimates["mean"]["point_estimate"]) / 1000
+        # Get GAP-generated process output
+
+        fp = f"/cs/home/apjg1/Documents/gitrepos/nfdeterminize/automatons/bns-{i}-{j}.nfa"
+        p = subprocess.run(["./nfdeterminize", "--verbose", "--timed", "--file", "/dev/null", "run", "file", fp], capture_output=True)
+        stdout = p.stdout.decode().split('\n')
+        ngaps = int(stdout[0].split(' ')[-1])
+        t_gaps = 0.0
+        with open(f"{fp_orig}/determinize file bns {i} {j} Sequential/{estim_loc}") as f:
+           estimates = json.load(f)
+           t_gaps = float (estimates["mean"]["point_estimate"]) / 1000
+        arr.append([i, j, nselfs, ngaps, round(t_selfs, 2), round(t_gaps, 2)])
+return arr
+#+end_src
+
 ** Multithreading Against Sequential
+
+Next, we compare the performance of the sequential algorithms against the multithreaded version. It is expected that
+the multithreaded have some amount of overhead and that therefore the multithreaded algorithm would perform worse
+than its sequential counterpart. However, as the complexity of the NFA/DFA increases, the multithreaded approach would
+end up significantly beating the sequential algorithm in time taken.
+
+#+begin_src python :results value :exports none
+import subprocess
+import json
+
+arr = [["b", "s", "Sequential determinize", "Multithreaded determinize", "Sequential minimize", "Multithreaded minimize"]]
+fp_orig = "/cs/home/apjg1/Documents/gitrepos/nfdeterminize/target/criterion"
+estim_loc = "base/estimates.json"
+for i in range(2, 4):
+    for j in range(2, 8):
+        t_selfs = 0.0
+        t_selfm = 0.0
+        with open(f"{fp_orig}/determinize bns {i} {j} Sequential/{estim_loc}") as f:
+           estimates = json.load(f)
+           t_selfs = float (estimates["mean"]["point_estimate"]) / 1000
+        with open(f"{fp_orig}/minimize bns {i} {j} Sequential/{estim_loc}") as f:
+           estimates = json.load(f)
+           t_selfm = float (estimates["mean"]["point_estimate"]) / 1000
+        # Get GAP-generated process output
+
+        t_gaps = 0.0
+        t_gapm = 0.0
+        with open(f"{fp_orig}/determinize bns {i} {j} Multithreaded(12)/{estim_loc}") as f:
+           estimates = json.load(f)
+           t_gaps = float (estimates["mean"]["point_estimate"]) / 1000
+        with open(f"{fp_orig}/minimize bns {i} {j} Multithreaded(12)/{estim_loc}") as f:
+           estimates = json.load(f)
+           t_gapm = float (estimates["mean"]["point_estimate"]) / 1000
+        arr.append([i, j, round(t_selfs, 2), round(t_gaps, 2), round(t_selfm, 2), round(t_gapm, 2)])
+return arr
+#+end_src
+
+#+RESULTS:
+| b | s | Sequential determinize | Multithreaded determinize | Sequential minimize | Multithreaded minimize |
+| 2 | 2 |                   5.23 |                   3725.09 |                2.28 |                   2.54 |
+| 2 | 3 |                  23.67 |                   4086.26 |                8.14 |                   8.78 |
+| 2 | 4 |                  78.21 |                   3506.48 |               20.27 |                  20.35 |
+| 2 | 5 |                 284.96 |                   3704.92 |               47.04 |                  47.63 |
+| 2 | 6 |                 882.84 |                   3848.89 |              113.11 |                 114.83 |
+| 2 | 7 |                2704.02 |                   5228.54 |              271.61 |                 279.62 |
+| 3 | 2 |                   16.0 |                   3296.99 |                3.91 |                    3.9 |
+| 3 | 3 |                 107.15 |                   3465.07 |               16.66 |                  17.42 |
+| 3 | 4 |                 648.39 |                   4018.34 |               54.03 |                  53.54 |
+| 3 | 5 |                3320.03 |                   6020.85 |               184.0 |                  191.4 |
+| 3 | 6 |               18929.55 |                  12607.03 |              590.02 |                 614.89 |
+| 3 | 7 |              117353.27 |                  43373.57 |             1787.97 |                1849.16 |
+
+#+CAPTION: Comparison time taken on sequential against multithreaded mode
+#+ATTR_LATEX: :align |c|c|| m{4em} | m{4em} | m{4em} | m{4em} |
+|---+---+------------------------+---------------------------+---------------------+------------------------|
+| b | s | Sequential determinize | Multithreaded determinize | Sequential minimize | Multithreaded minimize |
+|---+---+------------------------+---------------------------+---------------------+------------------------|
+|---+---+------------------------+---------------------------+---------------------+------------------------|
+| 2 | 2 |                   5.23 |                   3725.09 |                2.28 |                   2.54 |
+| 2 | 3 |                  23.67 |                   4086.26 |                8.14 |                   8.78 |
+| 2 | 4 |                  78.21 |                   3506.48 |               20.27 |                  20.35 |
+| 2 | 5 |                 284.96 |                   3704.92 |               47.04 |                  47.63 |
+| 2 | 6 |                 882.84 |                   3848.89 |              113.11 |                 114.83 |
+| 2 | 7 |                2704.02 |                   5228.54 |              271.61 |                 279.62 |
+| 3 | 2 |                   16.0 |                   3296.99 |                3.91 |                    3.9 |
+| 3 | 3 |                 107.15 |                   3465.07 |               16.66 |                  17.42 |
+| 3 | 4 |                 648.39 |                   4018.34 |               54.03 |                  53.54 |
+| 3 | 5 |                3320.03 |                   6020.85 |               184.0 |                  191.4 |
+| 3 | 6 |               18929.55 |                  12607.03 |              590.02 |                 614.89 |
+| 3 | 7 |              117353.27 |                  43373.57 |             1787.97 |                1849.16 |
+|---+---+------------------------+---------------------------+---------------------+------------------------|
+<<table:seqmtcomp>>
+
 ** Multiprocessing Approach and Scaling
 
 
