@@ -3,6 +3,7 @@
 
 
 
+#+LATEX_CLASS: dissertation
 #+LATEX_HEADER: \usepackage{fancyhdr}
 #+LATEX_HEADER: \usepackage[a4paper, total={6in, 8in}]{geometry}
 #+LATEX_HEADER: \usepackage{fontspec}
@@ -13,7 +14,6 @@
 #+LATEX_HEADER: \usepackage{algorithm}
 #+LATEX_HEADER: \usepackage{amsthm}
 #+LATEX_HEADER: \usepackage{algpseudocode}
-#+LATEX_HEADER: \documentclass{book}
 #+LATEX_HEADER: \pagestyle{fancy}
 #+LATEX_HEADER: \fancyhf{}
 #+LATEX_HEADER: \lhead{Determinization and Minimization of Non-Deterministic NFAs - A Distributed Approach}
@@ -525,7 +525,7 @@ can be determinized and determinized in under a minute.
 
 * Results
 ** Comparison of Test Cases
-<<parap:testcomp>>
+<<para:testcomp>>
 Figure \ref{table:compselfgapaut} shows the evolution of automaton sizes for self-generated buffer and stack TPNs against GAP-generated TPNs. Meanwhile, figure \ref{table:compselfgapseq} A general
 observation that can be derived, is that self-generated TPNs are always initially smaller, and take considerably less
 time to determinize than GAP-generated TPNs. It can also be observed that the GAP-generated automatas grow in size a lot
@@ -614,7 +614,7 @@ return arr
 #+NAME: table:compselfgapseq
 #+CAPTION: Comparison of time taken on self-generated automats vs GAP-generated ones
 #+ATTR_LATEX: :align |c|c||m{4em}|m{4em}|m{4em}|m{4em}|
-#+RESULTS[0ff6c3cec828253b6530742ab545aaf2fb40a88f]: py:compselfgapseq
+#+RESULTS: py:compselfgapseq
 |---+---+----------------------------+---------------------------+-------------------------+------------------------|
 | b | s | self-generated determinize | GAP-generated determinize | self-generated minimize | GAP-generated minimize |
 |---+---+----------------------------+---------------------------+-------------------------+------------------------|
@@ -742,14 +742,14 @@ return arr
 | b | s | bns determinize | two-stack determinize | bns minimize | two-stack minimize |
 |---+---+-----------------+-----------------------+--------------+--------------------|
 |---+---+-----------------+-----------------------+--------------+--------------------|
-| 2 | 2 |            4.32 |                  4.52 |         1.84 |               1.93 |
-| 2 | 3 |           21.06 |                 16.47 |         6.56 |               6.55 |
-| 2 | 4 |           67.52 |                 57.57 |         17.4 |              15.99 |
-| 2 | 5 |          259.65 |                223.44 |        38.76 |              38.31 |
-| 3 | 2 |           12.64 |                 17.94 |          3.3 |               8.32 |
-| 3 | 3 |           86.88 |                148.28 |         13.6 |              39.53 |
-| 3 | 4 |          532.32 |               1652.58 |        44.12 |             330.78 |
-| 3 | 5 |         2835.99 |               16669.4 |       151.94 |            2845.31 |
+| 2 | 2 |            4.41 |                  4.47 |         2.01 |                1.9 |
+| 2 | 3 |           19.63 |                 16.28 |         6.49 |               6.44 |
+| 2 | 4 |           68.97 |                 58.51 |        16.43 |              15.63 |
+| 2 | 5 |          248.45 |                219.23 |        36.68 |              36.52 |
+| 3 | 2 |           12.84 |                 17.87 |          3.0 |               8.15 |
+| 3 | 3 |           84.14 |                144.55 |        12.74 |              39.39 |
+| 3 | 4 |          523.06 |               1630.83 |        41.85 |             330.92 |
+| 3 | 5 |         2719.26 |              16665.59 |       150.82 |            2897.42 |
 |---+---+-----------------+-----------------------+--------------+--------------------|
 
 Finally, it is interesting to remark how with the way the powerset construction algorithm is done here, there rarely ever
@@ -831,6 +831,15 @@ more threads. Such an effect may be due to how if given too high a number of thr
 uneven spread between states belonging to each thread, and thus an uneven share of loads, while some hash map shards may
 spend too much time being concurrently accessed.
 
+Third, figure \ref{table:multincr} shows the evolution of the time taken by determinization over
+a buffer-size 3 stack-size 7 buffer and stack TPN as the number of threads increases. As expected,
+the time taken for the model decreases rapidly as the number of threads increases, then stagnates a bit
+after a certain number of threads. Meanwhile, figure \ref{table:multincr_low} shows the evolution of
+time taken by determinization over a buffer-size 3 stack-size 7 buffer and stack TPN. Such a stack
+is a lot less complicated to determinize than a 3-7 buffer-and-stack TPN, and as expected,
+the optimal amount of threads here decreases to 3, before performance takes a hit the higher the number of threads goes. Such behaviour is the consequence of the amount of threads being too
+large for the complexity of the automata.
+
 #+NAME: py:multincr
 #+begin_src python  :exports results :results file
 import subprocess
@@ -840,17 +849,17 @@ import pandas as pd
 import json
 
 imagep = "images/multincr.png"
-cols = ["Nb. Threads", "Running Time"]
+cols = ["Nb. Threads", "Running Time (ms)"]
 arr = []
 fp_orig = "/cs/home/apjg1/Documents/gitrepos/nfdeterminize/target/criterion"
 estim_loc = "base/estimates.json"
 for i in range(2, 12):
         with open(f"{fp_orig}/determinize bns 3 7 mult_incr/{i}/{estim_loc}") as f:
            estimates = json.load(f)
-           t_selfs = float (estimates["mean"]["point_estimate"]) / 1000
+           t_selfs = float (estimates["mean"]["point_estimate"]) / 1000000
         arr.append([i, round(t_selfs, 2)])
 
-sn.lineplot(data=pd.DataFrame([i[1] for i in arr], columns=[cols[1]], index=[i[0] for i in arr])).set(title="Time taken for BnS 3 7 determinization by number of threads used")
+sn.lineplot(data=pd.DataFrame(arr, columns=cols), x="Nb. Threads", y="Running Time (ms)").set(title="Time taken for BnS 3 7 determinization by number of threads used")
 plt.savefig(imagep)
 
 return imagep
@@ -861,7 +870,37 @@ return imagep
 #+RESULTS: py:multincr
 [[file:images/multincr.png]]
 
-* Conclusion
+#+NAME: py:multincr_low
+#+begin_src python  :exports results :results file
+import subprocess
+import matplotlib.pyplot as plt
+import seaborn as sn
+import pandas as pd
+import json
+
+imagep = "images/multincr_low.png"
+cols = ["Nb. Threads", "Running Time (ms)"]
+arr = []
+fp_orig = "/cs/home/apjg1/Documents/gitrepos/nfdeterminize/target/criterion"
+estim_loc = "base/estimates.json"
+for i in range(2, 12):
+        with open(f"{fp_orig}/determinize bns 3 4 mult_incr/{i}/{estim_loc}") as f:
+           estimates = json.load(f)
+           t_selfs = float (estimates["mean"]["point_estimate"]) / 1000000
+        arr.append([i, round(t_selfs, 2)])
+
+sn.lineplot(data=pd.DataFrame(arr, columns=cols), x="Nb. Threads", y="Running Time (ms)").set(title="Time taken for BnS 3 4 determinization by number of threads used")
+plt.savefig(imagep)
+
+return imagep
+#+end_src
+
+#+NAME: table:multincr_low
+#+CAPTION: Time taken for buffer and stack 3 7 determinization by number of threads used
+#+RESULTS: py:multincr_low
+[[file:images/multincr_low.png]]
+
+* Conclusion & Future Works
 
 * Appendix
 ** Software Tests
