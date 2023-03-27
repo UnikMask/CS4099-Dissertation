@@ -39,7 +39,7 @@ Finally, the topic of determinization and minimization is explored for higher cl
 
 * Related Works
 Single-threaded NFA determinization and minization algorithms have existed since the 1950s.
-DFA determinization's /Rabin-Scott superset construction/ algorithm is a well-known determinization algorithm which has existed for a long time. However, DFA
+DFA determinization's /Rabin-Scott powerset construction/ algorithm is a well-known determinization algorithm which has existed for a long time. However, DFA
 minimization is younger, and the most well-known minimization algorithm today is Hopcroft's minimization algorithm \cite{Hopcroft1971AnNL}. However, this algorithm becomes less useful as automatas get larger,
 and the need for parallelization arises.
 
@@ -179,7 +179,7 @@ ZeroMQ is more complete, as it supports a lot more kinds of transports such as T
 * Sequential Approach
 ** Approach to Determinization
 First of all, NFA determinization is a well-known process, and efficient algorithms for it have existed for a long time.
-The most widely-used algorithm for determinization is the superset construction algorithm, which explores the NFA from node
+The most widely-used algorithm for determinization is the powerset construction algorithm, which explores the NFA from node
 to node, keeping track of the sets of states visited in a map, until we've explored all reachable nodes.
 
 The major advantage of this algorithm over any other is that it only explores reachable states in the NFA, and produces only
@@ -190,10 +190,10 @@ reachable states in the resulting DFA. The consequences are two-fold:
 The algorithm possesses shared memory in form of \(M\), the structure that maps a kept set of states to the number that it
 is assigned on the final DFA, because the algorithm needs to check if a state has already been found after producing it.
 
-#+CAPTION: Rabin Scott's Superset Construction Algorithm
+#+CAPTION: Rabin Scott's Powerset Construction Algorithm
 \begin{algorithm}
 \begin{algorithmic}[1]
-\Procedure{SupersetConstruction}{\(M = (S, \Sigma, \delta, S_{0}, T)\)}
+\Procedure{PowersetConstruction}{\(M = (S, \Sigma, \delta, S_{0}, T)\)}
 \State \(M\) \gets [(\(S_{0}, 0\))]
 \State \(T^{'}\) \gets []
 \If{\(\exists s \in S_{0}. s \in T\)}
@@ -221,22 +221,22 @@ is assigned on the final DFA, because the algorithm needs to check if a state ha
 \end{algorithmic}
 \end{algorithm}
 
-Complexity-wise, the worst-case time complexity of the superset construction is \(O(2^{n})\), where \(n\) is the number of states in the original NFA.
+Complexity-wise, the worst-case time complexity of the powerset construction is \(O(2^{n})\), where \(n\) is the number of states in the original NFA.
 Such worst-case is unavoidable as the size of the superset of states in the NFA \(\left| \mathds{P}(S) \right| = 2^{\left| S \right|}\), where \(S\) is the set of states in the original NFA.
-However, this treshold is generally never reached, hence the purpose of the superset construction algorithm.
+However, this treshold is generally never reached, hence the purpose of the powerset construction algorithm.
 
-In terms of implementing the sequential version of the superset construction algorithm, most of the design decision comes in
+In terms of implementing the sequential version of the powerset construction algorithm, most of the design decision comes in
 how to store sets of states, as a state should be able to describe one of \(2^{n}\) possible states.
 
 *** Storing Sets of States
-The main challenge of superset construction implementation is not the implementation of the exploration algorithm, but
-rather how to represent states of superset construction. The issues stems from how in superset construction, there
+The main challenge of powerset construction implementation is not the implementation of the exploration algorithm, but
+rather how to represent states of powerset construction. The issues stems from how in powerset construction, there
 are about \(2^{n}\) possibly reachable states, so it is required to find a fast and memory-efficient way to store
 such a state in a hash map. Furthermore, \cite{DBLP_journal} states that in a 2 billion-state DFA, each DFA state may
 consist of upto 20 of the NFA states. Therefore, it is definitely required shorten the size of a state.
 
 The solution implemented in the program is as such -
-+ During superset construction, when a new state is being searched, represent the set of states as an array of bits.
++ During powerset construction, when a new state is being searched, represent the set of states as an array of bits.
   This representation is useful as bitwise operations can be done upon it, for a low cost.
 
 + Then, before hashing the set and inserting it to a hash map, compress the array. Here, the lz4 algorithm is used.
@@ -252,7 +252,7 @@ the =ubig.rs= source file.
 
 It is important to note during determinization, that the majority of a token passing network's automaton's transitions are
 \epsilon transitions. However, \epsilon transitions in general contribute lightly to the final DFA, and take up a considerable amount
-of time when constructing a set of states during superset construction. There are 2 solutions to this problem:
+of time when constructing a set of states during powerset construction. There are 2 solutions to this problem:
 + Caching the final set of states for all states in the NFA, and lookup the cache when the state is checked again later on,
 + Removing \epsilon transitions from the NFA before feeding it to the determinization algorithm.
 
@@ -404,11 +404,11 @@ automatas. However, as the size of the given automatas increases, single threade
 need to extend the determinization and minimization process to multiple threads, or multiple machines.
 
 The main challenge of rewriting determinization and minimization comes from the amount of shared memory used during
-superset construction and Hopcroft's algorithm. While superset construction can be relatively well separated between
+powerset construction and Hopcroft's algorithm. While powerset construction can be relatively well separated between
 threads and processes, it is harder to do so using Hopcroft's algorithm, as it is optimised for sequential use.
 ** New Algorithms
 *** Determinization
-To extend the superset construction algorithm for multithreaded usage and avoid as much use of shared memory,
+To extend the powerset construction algorithm for multithreaded usage and avoid as much use of shared memory,
 the algorithm is modified as such, for some number \(k\) of threads:
 + Divide the frontier of research into \(k\) frontiers, such that each thread has access to its own queue,
 + Divide the state to number map to \(k\) parts, accessed by each thread. Each thread hashes the set of states it
@@ -416,18 +416,23 @@ the algorithm is modified as such, for some number \(k\) of threads:
 + The main thread keeps track of which thread's frontier is empty, and sends a signal to each thread to kill itself once
   all frontiers for each thread is empty, which means all the graph has been explored.
 
-This approach mainly uses mutexes for access to shared memory instead of inter-thread messaging. Messaging-based approach
-will instead be used later.
+This approach mainly uses mutexes for access to shared memory instead of inter-thread messaging.
+A message based approach would work differently. In a message based approach, for each worker thread, do:
+1. Have a channel between each thread, able to pass new sets of states and new transitions,
+2. During the powerset construction, after constructing a new state and hashing it, send it to the thread
+  it belongs to.
+3. When a thread receives a state and a transition, check if the state is a duplicate or not. If it is not
+  a duplicate, add it to the thread's map of states, compute the state's transitions, and repeat step 2.
 
-The reason the superset construction algorithm works well for a multithreaded approach is because most of the computation
-going on during superset construction happens when constructing a new state from the frontier, which is a step that
+The reason the powerset construction algorithm works well for a multithreaded approach is because most of the computation
+going on during powerset construction happens when constructing a new state from the frontier, which is a step that
 does not require shared memory. Furthermore, shared memory issues are inhibited by the sharding of the map and the frontier.
-Thus, superset construction greatly profits from multithreading and multiprocessing.
+Thus, powerset construction greatly profits from multithreading and multiprocessing.
 
-#+CAPTION: Multithreaded Superset Construction Algorithm
+#+CAPTION: Multithreaded Powerset Construction Algorithm
 \begin{algorithm}
 \begin{algorithmic}[1]
-\Procedure{SupersetConstruction}{\(M = (S, \Sigma, \delta, S_{0}, T)\)}
+\Procedure{PowersetConstruction}{\(M = (S, \Sigma, \delta, S_{0}, T)\)}
 \State \(M\) \gets [(\(S_{0}, 0\))]
 \State \(T^{'}\) \gets []
 \If{\(\exists s \in S_{0}. s \in T\)}
@@ -461,9 +466,15 @@ parallelize. Hopcroft's minimization algorithm is still the currently best minim
 complexity, as explained in \ref{para:hopcroft}. However, Hopcroft's algorithm is not efficiently parallelizable.
 Therefore an alternative approach is needed to implement multithreaded minimization.
 
-The DFA minimization parallelization started being approached around the 1990s. Here, a parrallelizable minimization
-algorithm called /partition refinement/ is used, first implemented by \cite{Slavici2012AnEP}, with the exception
-that a RAM-based implementation is used in =nfdeterminize='s case.
+The DFA minimization parallelization started being approached around the 1990s. For example, \ref{REVUZ1992181} implements
+parallel an algorithm for DFA minimization, one of the first ones to do so. Later, \ref{Slavici2012AnEP} sets up a
+programming model for converting memory-intensive recursive algorithms into algorithms using parallel disks. The main
+advantage of a parallel-disk setup is to be able to store and determinize bigger algorithms.
+
+Here, however, Hopcroft's algorithm is kept for 2 reasons:
++ The combination of the token passing networks being generated by =nfdeterminize= and superset construction produce
+  pretty small intermediate automatons and rarely produce good results with minimization (cf. \ref{para:testcomp}),
++
 #+TODO: Pseudocode shared memory minimization algo
 
 * Multiprocess/Distributed Approach
@@ -516,6 +527,7 @@ can be determinized and determinized in under a minute.
 
 * Results
 ** Comparison of Test Cases
+<<parap:testcomp>>
 Figure \ref{table:compselfgapaut} shows the evolution of automaton sizes for self-generated buffer and stack TPNs against GAP-generated TPNs. Meanwhile, figure \ref{table:compselfgapseq} A general
 observation that can be derived, is that self-generated TPNs are always initially smaller, and take considerably less
 time to determinize than GAP-generated TPNs. It can also be observed that the GAP-generated automatas grow in size a lot
@@ -551,6 +563,7 @@ return arr
 #+RESULTS:
 
 
+#+NAME: table:compselfgapaut
 #+CAPTION: Comparison between self-generated TPNs and GAP-generated TPNs
 #+ATTR_LATEX: :align |c|c|| m{4em} | m{4em} | m{4em} | m{4em} | m{4em} | m{4em} |
 |---+---+------------------+-----------------+-----------------------+----------------------+----------------+---------------|
@@ -566,7 +579,6 @@ return arr
 | 3 | 4 |              351 |            7288 |                    33 |                   33 |             33 |            33 |
 | 3 | 5 |             1053 |           29134 |                    85 |                   85 |             85 |            85 |
 |---+---+------------------+-----------------+-----------------------+----------------------+----------------+---------------|
-<<table:compselfgapaut>>
 
 #+begin_src python :async yes :results value :exports none
 import subprocess
@@ -610,6 +622,7 @@ return arr
 | 3 | 4 |                     648.39 |                  13325.41 |                   54.03 |                  54.54 |
 | 3 | 5 |                    3320.03 |                  108088.1 |                   184.0 |                 188.63 |
 
+#+NAME: table:compselfgapseq
 #+CAPTION: Comparison of time taken on self-generated automats vs GAP-generated ones
 #+ATTR_LATEX: :align |c|c||m{4em}|m{4em}|m{4em}|m{4em}|
 |---+---+----------------------------+---------------------------+-------------------------+------------------------|
@@ -625,7 +638,6 @@ return arr
 | 3 | 4 |                     648.39 |                  13325.41 |                   54.03 |                  54.54 |
 | 3 | 5 |                    3320.03 |                  108088.1 |                   184.0 |                 188.63 |
 |---+---+----------------------------+---------------------------+-------------------------+------------------------|
-<<table:compselfgapseq>>
 It is possible to establish now that there are only advantages to using the self-generated NFAs instead of the GAP-generated
 ones when it comes to researching about token passing networks. However, research of allowed permutations in sequential
 stack TPNs is often further simplified to searching about stack and buffer TPNs. The reasoning behind it is that the
@@ -679,6 +691,7 @@ return arr
 |  3 |  7 |        9477 |              4557 |              577 |                  41888 |       577 |           41888 |
 
 
+#+NAME: table:tsvsbns
 #+CAPTION: Automaton size comparison between buffer-and-stack NFAs and Two-stack NFAs
 #+ATTR_LATEX: :align |c|c|| m{4em} | m{4em} | m{4em} | m{4em} | m{4em} | m{4em} |
 |----+----+-------------+-------------------+------------------+------------------------+-----------+-----------------|
@@ -698,7 +711,6 @@ return arr
 |  3 |  6 |        3159 |              1740 |              221 |                   6682 |       221 |            6682 |
 |  3 |  7 |        9477 |              4557 |              577 |                  41888 |       577 |           41888 |
 |----+----+-------------+-------------------+------------------+------------------------+-----------+-----------------|
-<<table:tsvsbns>>
 
 Two major remarks can be done from figure \ref{table:tsvsbns}. First, the size of both initial automatas is
 very similar, and evolves similarly. On buffer/first stack size \(= 2\), they're even equal. This similarity is an
@@ -708,37 +720,50 @@ Then, from observations of the intermediary DFA sizes for bns and two-stack TPNs
 it can be seen how much quicker the size of the two-stack TPN increases compared to the size of the buffer-and-stack TPN,
 despite how the initial size of the buffer-and-stack TPN was bigger than that of the two-stack TPN. This evolution may be
 caused due to how more states in the buffer-and-stack NFA may share the same state in the intermediary DFA, due to the
-larger number of \(\epsilon\) transitions.
+larger number of \(\epsilon\) transitions. In the end, the increased complexity of two-stack TPNs over buffer-and-stack TPNs is
+demonstrated by how much more time
+
+#+NAME: py:tsvsbnstime
 #+begin_src python :async yes :results value :exports none
 import subprocess
 import json
 
-arr = [["b", "s", "two-stack determinize", "bns determinize", "two-stack minimize", "bns minimize"]]
+arr = [["-"],["b", "s", "bns determinize", "two-stack determinize", "bns minimize", "two-stack minimize"], ["-"], ["-"]]
 fp_orig = "/cs/home/apjg1/Documents/gitrepos/nfdeterminize/target/criterion"
 estim_loc = "base/estimates.json"
 for i in range(2, 4):
     for j in range(2, 6):
-        # Get self-generated process results
-        p = subprocess.run(["./nfdeterminize", "--verbose", "--timed", "--file", "/dev/null", "run", "bns", str(i), str(j)], capture_output=True)
-        stdout = p.stdout.decode().split('\n')
-        nselfs = int(stdout[0].split(' ')[-1])
         t_selfs = 0.0
+        t_selfm = 0.0
         with open(f"{fp_orig}/determinize bns {i} {j} Sequential/{estim_loc}") as f:
            estimates = json.load(f)
            t_selfs = float (estimates["mean"]["point_estimate"]) / 1000
+        with open(f"{fp_orig}/minimize bns {i} {j} Sequential/{estim_loc}") as f:
+           estimates = json.load(f)
+           t_selfm = float (estimates["mean"]["point_estimate"]) / 1000
         # Get GAP-generated process output
 
-        fp = f"/cs/home/apjg1/Documents/gitrepos/nfdeterminize/automatons/bns-{i}-{j}.nfa"
-        p = subprocess.run(["./nfdeterminize", "--verbose", "--timed", "--file", "/dev/null", "run", "file", fp], capture_output=True)
-        stdout = p.stdout.decode().split('\n')
-        ngaps = int(stdout[0].split(' ')[-1])
         t_gaps = 0.0
-        with open(f"{fp_orig}/determinize file bns {i} {j} Sequential/{estim_loc}") as f:
+        t_gapm = 0.0
+        with open(f"{fp_orig}/determinize ts {i} {j} Sequential/{estim_loc}") as f:
            estimates = json.load(f)
            t_gaps = float (estimates["mean"]["point_estimate"]) / 1000
-        arr.append([i, j, nselfs, ngaps, round(t_selfs, 2), round(t_gaps, 2)])
+        with open(f"{fp_orig}/minimize ts {i} {j} Sequential/{estim_loc}") as f:
+           estimates = json.load(f)
+           t_gapm += float (estimates["mean"]["point_estimate"]) / 1000
+        arr.append([i, j, round(t_selfs, 2), round(t_gaps, 2), round(t_selfm, 2), round(t_gapm, 2)])
+arr.append(["-"])
 return arr
 #+end_src
+
+#+NAME: fig:tsvsbnstime
+#+CAPTION: Time taken comparison between buffer-and-stack NFAs and two-stack NFAs
+#+RESULTS: py:tsvsbnstime
+
+Finally, it is interesting to remark how with the way the powerset construction algorithm is done here, there rarely ever
+is a case where DFA minimization ends up minimizing the initial DFA when it comes to token passing networks. Hence the
+amount of time that was spent over the determinization algorithm over the minimization algorithm during the development
+of =nfdeterminize=.
 
 ** Multithreading Against Sequential
 
@@ -793,6 +818,7 @@ return arr
 | 3 | 6 |               18929.55 |                  12607.03 |              590.02 |                 614.89 |
 | 3 | 7 |              117353.27 |                  43373.57 |             1787.97 |                1849.16 |
 
+#+NAME: table:seqmtcomp
 #+CAPTION: Comparison time taken on sequential against multithreaded mode
 #+ATTR_LATEX: :align |c|c|| m{4em} | m{4em} | m{4em} | m{4em} |
 |---+---+------------------------+---------------------------+---------------------+------------------------|
@@ -812,9 +838,17 @@ return arr
 | 3 | 6 |               18929.55 |                  12607.03 |              590.02 |                 614.89 |
 | 3 | 7 |              117353.27 |                  43373.57 |             1787.97 |                1849.16 |
 |---+---+------------------------+---------------------------+---------------------+------------------------|
-<<table:seqmtcomp>>
 
-** Multiprocessing Approach and Scaling
+Figure \ref{table:seqmtcomp} shows the time taken by the sequential and multithreaded algorithms when running buffer
+and stack algorithms. As can be seen, on lower NFA sizes, the sequential algorithm performs much better, probably due
+to how much less overhead it has to do before running. However, as the NFA's size increases, the multithreaded algorithm
+ends up performing much better.
+
+A general remark to make is that the efficiency of the mulithtreaded algorithm depends on the complexity of the NFA to
+determinize against the number of threads being run - and the bigger the NFA is, the more efficient it is to use
+more threads. Such an effect may be due to how if given too high a number of threads, and too small an NFA, there may be
+uneven spread between states belonging to each thread, and thus an uneven share of loads, while some hash map shards may
+spend too much time being concurrently accessed.
 
 
 * Conclusion
@@ -1180,6 +1214,42 @@ From the rank encoding it is easy to describe the language of all accepted permu
 the wish to convert transportation graphs into NFAs, and to determinize and minimize them.
 
 ** User Manual
+=Nfdeterminize= allows the user 3 kinds of commands:
++ =run= - Run full determinization and minimization,
++ =determinize= - Determinize an NFA,
++ =minimize= - Minimize a DFA.
++ =help= - Print the help page.
+
+3 kinds of NFAs/DFAs are accepted by the program, via the following arguments to a command:
++ =bns i j= - Generate a buffer size \(i\), stack size \(j\) buffer and stack TPN's NFA,
++ =ts i j= - Generate a two-stack sizes \(i\) and \(j\) TPN's NFA,
++ =file fp= - Load an NFA/DFA from a given file.
+
+The file format for an NFA/DFA is as such:
+\begin{verbatim}
+Automaton{size, alphabet, transitions array, starting states, accept states};;
+\end{verbatim}
+Where:
++ size: number,
++ alphabet: number or string of letters (@ counts as the \epsilon letter)
++ transitions array:
+  - For NFAs: A 3D array with letters for rows, states for columns, and sets of states for cells,
+  - For DFAs: A 2D array with letters for rows, and \(n\) columns, with a single state per cell, for \(n\)
+    the number of states in the automaton.
++ starting states: A set of states,
++ accept states: A set of states.
+
+The following arguments are allowed in generl:
++ =--file= - The file to print the final automaton to. =stdout= if not given.
++ =--help= - Print help information.
++ =--mode= - The mode to run the program on - sequential or multithreaded.
++ =--n-threads= - The number of threads to run the multithreaded program on. Ignored on sequential mode.
++ =--timed= - Time the running process.
++ =--verbose= - Print verbose output.
+
+The =run= and =minimize= command accept the following arguments:
++ =--method= - Choose the method for running: either by partition refinement minimization, or using Brzozowski's (WARNING: Brzozowski's implementation is experimental and may not lead to good results.
+  Therefore it is not properly tested and not recommended).
 
 \bibliographystyle{ieeetr}
 \bibliography{dissertation}
