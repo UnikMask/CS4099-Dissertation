@@ -10,7 +10,7 @@
 #+LATEX_HEADER: \usepackage{amsmath}
 #+LATEX_HEADER: \usepackage{tikz}
 #+LATEX_HEADER: \usepackage{array}
-#+LATEX_HEADER: \usetikzlibrary{automata, positioning, arrow}
+#+LATEX_HEADER: \usetikzlibrary{automata, positioning, arrow, graphs, graphdrawing}
 #+LATEX_HEADER: \usepackage{algorithm}
 #+LATEX_HEADER: \usepackage{amsthm}
 #+LATEX_HEADER: \usepackage{algpseudocode}
@@ -19,32 +19,99 @@
 #+LATEX_HEADER: \lhead{Determinization and Minimization of Non-Deterministic NFAs - A Distributed Approach}
 #+LATEX_HEADER: \fancyfoot[RO, LE] {Page \thepage}
 
+* Setup :noexport:
+#+begin_src emacs-lisp :results none :exports none :eval always
+(add-to-list 'org-latex-classes '("dissertation" "\\documentclass[11pt]{report}"
+                ("\\chapter{%s}" . "\\chapter*{%s}")
+                ("\\section{%s}" . "\\section*{%s}")
+                ("\\subsection{%s}" . "\\subsection*{%s}")
+                ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
+                ("\\paragraph{%s}" . "\\paragraph*{%s}")))
+#+end_src
 
 * Introduction
 Finite State Automata are one of the most fundamental concepts in Computer Science. Their uses range everywhere from parsing
 to mathematical theory. Finite State Automata exist in two kinds: Deterministic Finite Automata (DFAs) and Non-Deterministic
 Finite Automata (NFAs).
 
-It is well-known that both structures describe the same set of languages (regular languages), but
-it is in general significantly easier to work with DFAs than NFAs. Some problems are first transcribed into NFAs, therefore
-the determinization of a DFA into a NFA, and it's minimization, are critical steps into the understanding of those problems.
-However, both those problems are computationally complex and memory intensive, hence the need to do it efficiently, and to
-distribute the computation towards multiple systems.
+It is well-known and proven that all languages NFAs can describe have a deterministic equivalent. Therefore, determinization
+is the process of converting an NFA into a DFA that describes the equivalent language. Then, it is also well-known and proven
+that there exists an infinity of DFAs able to describe the same language. So we describe a minimal DFA is the DFA with the
+smallest number of states that is able to describe it's language. Therefore, the process of minimization is the process of
+finding the minimal deterministic automaton from an initial automaton.
+
+In many fields, such as permutation theory, it is in general significantly easier to work with DFAs than NFAs, as it
+is significantly easier to study the language an automaton describes from it's deterministic version. So, some problems
+are first transcribed into NFAs, meaning that the determinization of a DFA into a NFA, and it's minimization, are critical steps
+into the understanding of those problems. However, both those problems are computationally complex and memory intensive, hence
+the need to do it efficiently, and to optimise, scale, and distribute the computation towards multiple systems.
 
 In this paper, is achieved a program that implements a set of determinization and minimization algorithms, ranging from
-single-threaded to distributed, in the goal of achieving fast, efficient, and scalable determinization and minimization of
+single-threaded to multi-threaded, in the goal of achieving fast, efficient, and scalable determinization and minimization of
 NFAs. Further algorithms and solutions are described, and some implemented, that try to achieve that task. The algorithms are
 then tested and compared on a problem class about the determinization of NFAs: Transportation Graphs AKA Token Passing Networks.
+Furthermore, for the purpose of distributed computation, techniques to distribute that task are discussed.
 
 Finally, the topic of determinization and minimization is explored for higher classes of machines, such as Pushdown Automatas.
 
-* Related Works
-Single-threaded NFA determinization and minization algorithms have existed since the 1950s.
+** Objectives
+The original objectives at the start of the project were as such. Some were implemented, while some
+objectives were modified, suffering from complications or decision changes during development.
+Those are described below.
+
+*** Primary Objectives
+The original primary objectives were as such:
+1. Write the powerset construction algorithm on a single thread as a basis for further progress,
+2. Implement the minimization algorithm to get from the intermediate DFA to an optimised DFA,
+3. Review the data structure choices over the single-threaded version and refine it's efficiency.
+4. Make both algorithms concurrent, to use them on a multi-threaded system, and later a computer
+   cluster,
+5. Make a formal model of the algorithm and verify it to ensure the system will not suffer from
+   concurrency issues,
+6. Benchmark the system and compare it's efficiency to the non-concurrent determinization and minimization algorithms.
+
+Overall, while the original plan was to have a completely distributed system run on a cluster of
+machines, the project's direction has changed towards the end, instead focusing on optimising
+and verifying the sequential and multithreaded versions of the program. However, the potential scaling
+of the determinization and minimization tasks is still studied and discussed, and some models studied.
+
+*** Secondary Objectives
+The original secondary objectives were as such:
+1. Search and find patterns in the NFA which may skip parts of the determinization and minimization
+  process.
+2. Implement Brzozowski's algorithm, which produces a minimal DFA from the initial NFA,
+3. Make an add-on/package for the GAP Discrete Algebra System, to link GAP with the program.
+
+First, while the first secondary objective (search and find patterns in the NFA) was deemed
+only as secondary originally, it has become more important during development as it became increasingly
+important to be able to generate NFAs locally out of token passing networks. The importance of
+token passing networks to the project was not as big at the start as it ended up being. However, the fact
+that the main purpose for NFA determinization and minimization nowadays is its application toward
+token passing networks, and the token passing networks generated by GAP were faulty, that goal has
+changed to producing the most optimal NFA from a token passing network.
+
+Second, Brzozowski's algorithm for NFA determinization and minimization was implemented as well, but not
+properly tested due to it being generally slower than the original method. Therefore it is accessible,
+but not recommended for accurate results. However, the objective is considerable as accomplished.
+
+And third, the GAP discrete algebra system add-on was not implemented in the end, so the objective
+was not accomplished. Instead, the system is able to generate automata in GAP's format, so it should
+be possible to load a minimized automata back to GAP.
+
+*** Tertiary Objectives
+Finally, the single tertiary objective I listed in the original DOER was to explore extensions
+of determinization and minimization onto higher classes of machines (Pushdown Automatas and Turing
+Machines). Determinization of higher classes of machines is discussed in this paper, along with
+their applications.
+
+
+** Related Works
+First, Single-threaded NFA determinization and minization algorithms have existed since the 1950s.
 DFA determinization's /Rabin-Scott powerset construction/ algorithm is a well-known determinization algorithm which has existed for a long time. However, DFA
 minimization is younger, and the most well-known minimization algorithm today is Hopcroft's minimization algorithm \cite{Hopcroft1971AnNL}. However, this algorithm becomes less useful as automatas get larger,
 and the need for parallelization arises.
 
-Parallel NFA determinization algorithms have begun being researched round the 1990s. For example, \cite{508056} ran
+Then,Parallel NFA determinization algorithms have begun being researched round the 1990s. For example, \cite{508056} ran
 a parallel NFA determinization and minimization algorithm on a supercomputer, using a message passing model instead of
 shared memory.
 In 2007, \cite{DBLP_journal} implements a disk-based distributed algorithm for large NFAs. A disk-based approach avoids the
@@ -57,6 +124,12 @@ performant distributed NFA determinization and minization algorithm. Later, in 2
 \cite{A2022ACS} compares both the MapReduce and a Bulk Synchonous Parallel-based NFA determinization and minimization algorithm,
 finding that the BSP/Pregel based solution outperforms the MapReduce solution.
 
+The main purpose of NFA determinization and minimization in general is the study of token passing networks. A general
+explanation of the problem can be found on appendix \ref{para:tpn}. An important purpose of the study of token passing
+networks is the study of random permutation for packet delays accross a network, but token passing network permutation
+research nowadays is mainly simply a mathematical interest, upon which we try to find laws about permutations in some
+kinds of token passing networks - mainly the two stack token passing network, and the buffer-and-stack token passing network.
+
 
 * Definitions
 To understand the presentation of the algorithms in this paper, and most notably the definitions of the minimization algorithms,
@@ -65,16 +138,20 @@ it is useful to present the definitions that will be used thereafter. Those are 
 *Finite State Machine* - Let \(M = (S, \Sigma, \delta, S_{0}, T)\) be a deterministic finite state machine (DFA) where:
 + \(S\) is the set of all states in \(M\)
 + \(\Sigma\): Alphabet,
-+ \(\delta \in S \times \Sigma \times S\): Transition function,
++ \(\delta \in S \times \Sigma \rightarrow S\): Transition function,
 + \(S_{0}\): Starting states,
 + \(T\): Accepting states.
 
 *Nondeterministic Finite State Machine* - let \(N = (S, \Sigma, \delta, S_{0}, T)\) be a non-deterministic finite state machine (NFA) where:
 + \(S\): Set of states,
 + \(\Sigma\): Alphabet,
-+ \(\delta \in {S \cup {\epsilon}} \times \Sigma \times \mathds{P}(S)\): Non-deterministic transition function - where \(\mathds{P}(S)\) is the powerset of S,
++ \(\delta \in {S \cup {\epsilon}} \times \Sigma \rightarrow \mathds{P}(S)\): Non-deterministic transition function - where \(\mathds{P}(S)\) is the powerset of S,
 + \(S_{0}\): Starting states,
 + \(T\): Accepting states.
+
+One property of a Nondeterministic Finite State Machine is it's ability to contain \(\epsilon\) transitions - those
+are transitions done with no required character input. This means, in an NFA, that
+traversing an \(\epsilon\) transition does not consume a character from the input.
 
 *FSM Language* \cite{berstel2010minimization}
 - Let \(L(M)\) be the language that the finite state machine \(M\) describes. For each state \(s \in S\), it is
@@ -95,9 +172,8 @@ of computing Nerode equivalences between sets of states, until no 2 states from 
 equivalent, upon which a new automata is defined with each of the given sets of states as states.
 
 *Reverse Transitions* - For \(s \in S, a \in \Sigma\), Let \(\delta^{-1}(s, a) = {s^{'} \in S | \delta(s^{'}, a) = s}\) be the reverse transitions
-of \(s\) for character \(a\). Let \(\mathcal{P}\) be a partition - a collection of sets of states,
-such that \(\forall s \in S. \exists!P \in \mathcal{P}. s \in P\), that is all states of \(M\) must be unique in the partition.
-Furthermore, let \(\delta(P, a), a \in \Sigma\) be the set of states for which a transition from a state in \(P\) lead to.
+of \(s\) for character \(a\). Let \(\mathcal{P}\) be a partition - a collection of disjoint sets, for
+which the union is \(S\). Furthermore, let \(\delta(P, a), a \in \Sigma\) be the set of states for which a transition from a state in \(P\) lead to.
 Likewise, let \(\delta^{-1}(P, a)\) be the set of states for which a transition to a set in \(P\) leads from.
 
 We can say between 2 sets \(P, R \in \mathcal{P}\), that the set \(R\) can be /split/ by \(\delta^{-1}(P, a)\) into 2 sets:
@@ -119,7 +195,7 @@ can either determinize the given NFA, minimize a DFA, or run both functionalitie
 
 ** Features
 As an NFA determinization and minimization solution that specialises in dealing with token passing network automatas,
-=nfdeterminizes= supports the following features:
+=nfdeterminize= supports the following features:
 + Loading automatas from file under GAP's printing style for finite state automatas,
 + Generating and loading automatas out of token passing network patterns for direct use by the program,
 + Determinizing and minimizing any given finite state automaton,
@@ -367,8 +443,8 @@ Hopcroft's Algorithm, described and implemented in \ref{para:hopcroft}, is consi
 partition refinement based minimization algorithm. However, the first partition refinement implemented is Moore's Algorithm,
 of which Hopcroft's Algorithm is based on.
 
-Moore's algorithm \cite{Moore1956} is an \(O(n^{2})\) time complexity algorithm for DFA determinization. It is the
-classical algorithm for partition refinement, which works as such:
+Moore's algorithm \cite{Moore1956} is an \(O(n^{2})\) time complexity algorithm for DFA minimization.
+It is the classical algorithm for partition refinement, which works as such:
 + Get an initial partition of 2 sets - final states and non-final states,
 + Until the partition doesn't change, repeat:
   - Produce a new partition \(\mathcal{P}^{'}\) s.t. \(\forall p, q \in S. \mathcal{P}^{'}[p] = \mathcal{P}^{'}[q] \Leftrightarrow
@@ -473,10 +549,27 @@ programming model for converting memory-intensive recursive algorithms into algo
 advantage of a parallel-disk setup is to be able to store and determinize bigger algorithms.
 
 Here, however, Hopcroft's algorithm is kept for 2 reasons:
-+ The combination of the token passing networks being generated by =nfdeterminize= and superset construction produce
-  pretty small intermediate automatons and rarely produce good results with minimization (cf. \ref{para:testcomp}),
++ The combination of the token passing networks being generated by =nfdeterminize= and powerset construction produce
+  pretty small intermediate automata and rarely produce good results with minimization (cf. \ref{para:testcomp}),
 + The current Hopcroft Algorithm implementation is efficient enough that often enough with buffer-and-stack TPNs it is not
   the part that takes the most time to run.
+
+
+* Distributed Approach
+A distributed implementation of NFA determinization and implementation is not implemented in =nfdeterminize=. But a model
+for a distributed application of a token passing network is described here and serves as a guideline for a potential
+distributed implementation of DFA determinization and minimization.
+
+#+CAPTION: Test graph
+\begin{figure}
+\centering
+\begin{tikzpicture}
+  \graph [nodes={draw, circle}, clockwise, radius=1cm, empty nodes, n=5] {
+    subgraph I_n [name=inner] --[complete bipartite]
+    subgraph I_n [name=outer]
+  };
+\end{tikzpicture}
+\end{figure}
 
 
 * Benchmarking
@@ -699,8 +792,8 @@ Then, from observations of the intermediary DFA sizes for bns and two-stack TPNs
 it can be seen how much quicker the size of the two-stack TPN increases compared to the size of the buffer-and-stack TPN,
 despite how the initial size of the buffer-and-stack TPN was bigger than that of the two-stack TPN. This evolution may be
 caused due to how more states in the buffer-and-stack NFA may share the same state in the intermediary DFA, due to the
-larger number of \(\epsilon\) transitions. In the end, the increased complexity of two-stack TPNs over buffer-and-stack TPNs is
-demonstrated by how much more time
+larger number of \(\epsilon\) transitions. In the end, the increased complexity of two-stack TPNs over buffer-and-stack TPNs is demonstrated by how much more time it takes to determinize and minimize
+a two-stack TPN compared to a buffer-and-stack TPN with similar configuration.
 
 #+NAME: py:tsvsbnstime
 #+begin_src python :async yes :results value :exports results
@@ -751,11 +844,6 @@ return arr
 | 3 | 4 |          523.06 |               1630.83 |        41.85 |             330.92 |
 | 3 | 5 |         2719.26 |              16665.59 |       150.82 |            2897.42 |
 |---+---+-----------------+-----------------------+--------------+--------------------|
-
-Finally, it is interesting to remark how with the way the powerset construction algorithm is done here, there rarely ever
-is a case where DFA minimization ends up minimizing the initial DFA when it comes to token passing networks. Hence the
-amount of time that was spent over the determinization algorithm over the minimization algorithm during the development
-of =nfdeterminize=.
 
 ** Multithreading Against Sequential
 
